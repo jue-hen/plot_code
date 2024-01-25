@@ -1,0 +1,542 @@
+library(ggplot2)
+#my_theme
+theme(plot.title = element_text(hjust = 0.5,size = 22, face = "bold"),
+      legend.title = element_blank(),
+      legend.text = element_text(size = 10),
+      legend.position = c(.8,.6),
+      plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(colour = "black", fill = NA),
+      axis.title = element_text(size = 24, face = 'bold'),
+      axis.text = element_text(size = 18, face = 'bold'))
+
+
+#火山图
+draw_plot <- function(nrDEG, title){
+  g1 <- ggplot(nrDEG,aes(logFC,log10P_value))+
+    theme_classic()+
+    geom_point(size = 2,aes(color = expression))+
+    scale_color_manual(values = c("grey","red","blue"))+
+    scale_x_continuous(limits = c(-5,5))+
+    geom_hline(yintercept = -log10(0.05),linetype = 4)+
+    geom_vline(xintercept = c(-1,1),linetype = 4)+
+    labs(x = "log2(fold change)", y = "-log10(p.adj)")+
+    ggtitle(title)+
+    theme(plot.title = element_text(hjust = 0.5),
+          legend.position = "right",
+          legend.title = element_blank())+
+    theme(axis.title = element_text(size = 16, face = 'bold'),
+          axis.text = element_text(size = 11, face = 'bold'))+
+    theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
+  return(g1)
+}
+
+#双向富集柱状图
+down_gene <- rownames(same_diff[which(same_diff$hypoxia_le == "Down-regulated"),])
+length(down_gene)
+up_gene <- rownames(same_diff[which(same_diff$hypoxia_le == "Up-regulated"),])
+length(up_gene)
+
+library(clusterProfiler)
+library(org.Mm.eg.db)
+dg <- bitr(down_gene,fromType = "SYMBOL",
+           toType = c("ENTREZID","ENSEMBL"),
+           OrgDb = "org.Mm.eg.db")
+ug <- bitr(up_gene, fromType = "SYMBOL",
+           toType = c("ENTREZID", "ENSEMBL"),
+           OrgDb = "org.Mm.eg.db")
+table(is.na(dg))
+table(is.na(ug))
+
+kegg_up <- enrichKEGG(ug$ENTREZID,
+                      organism = "mouse",
+                      keyType = "kegg",
+                      pvalueCutoff = 0.9,
+                      pAdjustMethod = "BH",
+                      qvalueCutoff = 0.9)
+kegg_up <- data.frame(kegg_up)
+write.table(kegg_up, file = '模拟6Km和低氧11.5%处理同样差异_up_gene_kegg.txt', sep = "\t", quote = F, row.names = F)
+
+kegg_down <- enrichKEGG(dg$ENTREZID,
+                        organism = "mouse",
+                        keyType = "kegg",
+                        pvalueCutoff = 0.9,
+                        pAdjustMethod = "BH",
+                        qvalueCutoff = 0.9)
+kegg_down <- data.frame(kegg_down)
+write.table(kegg_down, file = './le_mouse/hypoxia_zhang/模拟6Km和低氧11.5%处理同样差异_down_gene_kegg.txt', sep = "\t", quote = F, row.names = F)
+
+
+k_up <- kegg_up[c(1:10),]
+k_down <- kegg_down[c(1:10),]
+
+k_u <- k_up[,c(2,9,7)]
+k_u$change <- "up"
+k_d <- k_down[,c(2,9,7)]
+k_d$change <- "down"
+
+kg <- rbind(k_u,k_d)
+colnames(kg) <- c("Des", "Count", "Qvalue", "Change")
+kg$Qvalue <- ifelse(kg$Change == "up", -log10(kg$Qvalue), log10(kg$Qvalue))
+kg$Count <- ifelse(kg$Change == "up", kg$Count, -kg$Count)
+kg$Des <- factor(kg$Des, levels = rev(kg$Des))
+
+library(ggplot2)
+library(stringr)
+p <- ggplot(kg, aes(x = Qvalue, y = kg$Des, fill = Change))+
+  geom_col()+
+  theme_bw()
+p
+
+mytheme <- theme(
+  legend.position = 'none',
+  axis.text.y = element_blank(),
+  axis.ticks.y = element_blank(),
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  panel.border = element_blank(),
+  axis.line.x = element_line(color = 'grey60', linewidth = 1.1),
+  axis.text = element_text(size = 12)
+)
+
+p1 <- p + mytheme
+p1
+
+up <- kg[which(kg$Qvalue > 0),]
+down <- kg[which(kg$Qvalue < 0),]
+
+p2 <- p1 + 
+  geom_text(data = up, aes(x = -0.2, y = Des, label = Des),
+            size = 3, hjust = 1)
+p2
+
+
+p3 <- p2 +
+  geom_text(data = down, aes(x = 0.2, y = Des, label = str_wrap(Des, 100)),
+            size = 3, hjust = 0)
+p3
+
+p4 <- p3 + 
+  scale_x_continuous(limits = c(-3,3), breaks = seq(-10, 6, 2))+
+  labs(x = 'log10(qvalue)', y = '', title = "模拟6Km和低氧11.5%处理相同差异基因Enriched Pathway")+
+  theme(plot.title = element_text(hjust = 0.65, size = 14))+
+  theme(axis.title.x = element_text(hjust = 0.65))
+#geom_vline(xintercept = c(-log10(0.05),log10(0.05)),linetype = 4)
+p4
+
+mycol <- c('blue','red')
+p5 <- p4 + 
+  scale_fill_manual(values = mycol)
+p5
+
+p6 <- p5 + 
+  geom_text(x = 4, y = 7, label = "Up", size = 8, color = "red")+
+  geom_text(x = -6, y = 2, label = "Down", size = 8, color = 'blue')
+p6
+
+#双向柱状图带折线
+library(ggplot2)
+library(stringr)
+
+tmp <- with(kg, labeling::extended(-range(Qvalue)[2], range(Qvalue)[2], m = 7))
+lm <- tmp[c(1,length(tmp))]
+
+p <- ggplot(kg) +
+  geom_bar(aes(x = Des, y = Qvalue, fill = Change),
+           stat = "identity") +
+  scale_y_continuous(labels = abs(tmp), breaks = tmp,
+                     sec.axis = sec_axis(~.*5, name = "Count", breaks = seq(-12,30,2),
+                                         labels = abs(seq(-12,30,2))))+
+  geom_line(aes(x = Des, y = Count/5, group = 1),
+            color = "black", cex = 0.5) +
+  geom_point(aes(x = Des, y = Count/5), size = 2, color = 'black')+
+  labs(title = "模拟6Km处理差异基因Enriched Pathway",
+       x = "", y = "-logQvalue") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())+
+  coord_flip()+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())+
+  theme(axis.title = element_text(size = 8, face = 'bold'),
+        axis.text = element_text(size = 8, face = 'bold'))+
+  theme(plot.title = element_text(hjust = 0.5, size = 13, face = "bold"),
+        legend.title = element_blank())
+p
+mycol <- c('blue','red')
+p1 <- p + 
+  scale_fill_manual(values = mycol)
+p1
+
+
+#百分比堆叠柱状图
+dat_qixu$percent <- scales::percent(dat_qixu$partion, accuracy = 0.01)                                                                                                                             
+
+
+p1 <- ggplot(dat_qixu, aes(x = qixu, y = partion, fill = AMS, order = AMS))+
+  geom_bar(stat = "identity", width = 0.5, position = "fill", color = "black")+
+  theme_bw()+
+  scale_y_continuous(labels = scales::percent)+
+  labs(x = 'qixu condition', y = "percent", fill = "AMS")+
+  geom_text(aes(label = dat_qixu$percent), size = 4, 
+            position = position_stack(vjust = 0.5), color = 'black', 
+            fontface = 'bold')+
+  theme(legend.position = "toprigth")+
+  theme_classic()
+p1
+#scale_fill_manual(values = c("red","gray","yellow","pink","green"))+
+p2 <- p1 + 
+  theme(axis.title = element_text(size = 16, face = 'bold'),
+        axis.text = element_text(size = 11, face = 'bold'))+
+  ggtitle("qixu_chongqi")+
+  theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
+p2
+
+
+#数量堆叠柱状图  加手动计算的 P 值
+p3 <- ggplot(dat_qixu, aes(x = qixu, y = num, color = AMS))+
+  geom_bar(stat = "identity", width = 0.5, fill = "white")+
+  theme_classic()+
+  labs(x = 'qixu condition', y = "percent")+
+  geom_text(aes(label = c(61,95,9,7,4,7)),
+            size = 3, 
+            position = position_stack(vjust = 0.4),
+            color = 'black', fontface = 'bold')+
+  stat_pvalue_manual(
+    stat.test, y.position = 75, step.increase = 0.3,
+    label = 'p.adj'
+  )
+p3
+
+p4 <- p3 + 
+  theme(axis.title = element_text(size = 16, face = 'bold'),
+        axis.text = element_text(size = 11, face = 'bold'))+
+  ggtitle("qixu_chongqi", subtitle = "Fisher-test_FDR")+
+  theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
+p4
+
+#Venn图
+venn.diagram(x = list(as_4_8 = as_gene_2$geneSymbol, as_16_20 = as_gene$geneSymbol),
+             filename = 'same_as_venn.png', imagetype = 'png', 
+             fill = c("#CC3333", "#339999"), 
+             cat.cex = 2.5, 
+             cat.col = c("#CC3333", "#339999"), 
+             col = c("#CC3333", "#339999"), cex = 3,
+             scaled = F, fontface = "bold",
+             category.names = c("as_4_8", "as_16_20"),
+             cat.dist = 0.02, cat.pos = -180,
+             cat.fontface = 'bold', cat.default.pos = 'outer'
+)
+
+#箱线图带显著性
+library(tidyverse)
+library(ggpubr)
+library(ggplot2)
+draw_plot <- function(x,title){
+  options(digits = 4)
+  xx <- x[,c(2,3)] %>%
+    gather(key = "group", value = "accuracy")
+  acc <- mean(x$prior_acc)
+  pro_acc <- mean(x$processed_acc)
+  ggboxplot(xx, x = "group", y = "accuracy", fill = 'group', outlier.shape = NA) +
+    ylim(0,1.25)+
+    scale_fill_manual(values = c("#CC3333", "#339999"))+
+    stat_compare_means(
+      comparisons = list(c("glimpse", "xiaoyi")),
+      label = "p.signif",
+      method = "wilcox.test",
+      paired = T)+
+    ggtitle(title,
+            #subtitle = paste( paste0("prior_acc: ", round(acc,2)), paste0("processed_acc: ", round(pro_acc,2)), sep = "    ")
+    )+
+    theme(plot.title = element_text(hjust = 0.5,
+                                    size = 15, face = "bold"),
+          legend.title = element_blank(),
+          legend.text = element_text(size = 10, face = "bold"),
+          plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.border = element_rect(colour = "black", fill = NA),
+          axis.title = element_text(size = 14, face = 'bold'),
+          axis.text = element_text(size = 11, face = 'bold'))
+}
+#画折线图
+type <- c(rep("glimpse",3), rep("xiaoyi",3))
+sequence_depth <- c(rep(c("1x","3x","5x"),2))
+distance <- c(12.061,17.241,19.054,4.900,4.664,4.499)
+dat <- data.frame(type,sequence_depth,distance)
+ggplot(dat, aes(sequence_depth, distance, group=type, color=type, shape=type))+
+  theme_bw()+
+  scale_color_manual(values = c("#8ECFC9","#FA7F6F"))+
+  geom_point(size=4)+
+  geom_line(position = position_dodge(0.1), cex=1.3)+
+  geom_text(mapping = aes(label=distance), nudge_y = 1.2, fontface = 'bold')+
+  theme(
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10, face = "bold"),
+    plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA),
+    axis.title = element_text(size = 14, face = 'bold'),
+    axis.text = element_text(size = 11, face = 'bold'))
+
+library(ggplot2)
+ggplot(draw_dat, aes(MAF, acc, group=type, color=type))+
+  theme_bw()+
+  #scale_fill_manual(values = c("#8ECFC9","#FA7F6F","#82B0D2"))+
+  scale_color_manual(values = c("#8ECFC9","#FA7F6F","#82B0D2"))+
+  geom_point(size=4)+
+  geom_line(position = position_dodge(0.1), cex=1.3)+
+  geom_text(mapping = aes(label=acc),fontface = 'bold',size=3,nudge_y = -0.0001, nudge_x = -0.2)+
+  labs(x="MAF(%)", y="Accuracy")+
+  ggtitle("Evaluation of Chromosome 1")+
+  theme(plot.title = element_text(hjust = 0.5,size = 15, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10),
+        legend.position = c(.9,.8),
+        plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA),
+        axis.title = element_text(size = 14, face = 'bold'),
+        axis.text = element_text(size = 11, face = 'bold'))+
+  scale_y_continuous(labels = function(x)format(x,big.mark=",", scientific=FALSE))
+
+#转录组数据细胞免疫浸润分析
+#箱线图
+draw_cell_boxplot <- function(dat, title){
+  dat <- as.data.frame(dat[,1:22])
+  dat$sample <- row.names(dat)
+  
+  library(reshape)
+  dat_New <- melt(TME_dat)
+  colnames(dat_New)=c("Sample","Celltype","Composition")
+  library(ggpubr)
+  library(ggthemes)
+  ggboxplot(dat_New, x="Celltype",y="Composition",
+            axis.title = element_text(size = 8, colour = "black"),
+            axis.text = element_text(size = 8, colour = "black"),
+            color = "#EE9A49",
+            fill = "Celltype",
+            xlab = "",
+            ylab = "Cell composition",
+            main = title)+
+    theme_base()+
+    theme(axis.text.x = element_text(
+      angle = 90,
+      hjust = 1,
+      vjust = 1
+    ))
+}
+
+
+draw_cell_barplot <- function(dat){
+  dat <- as.data.frame(dat[,1:22])
+  dat$sample <- row.names(dat)
+  
+  library(reshape)
+  dat_New <- melt(TME_dat)
+  colnames(dat_New)=c("Sample","Celltype","Composition")
+  sample.order <- unique(TME_New$Sample)
+  ggbarplot(dat_New, 
+            x = "Sample", 
+            y = "Composition", 
+            size = 0, 
+            fill = "Celltype",
+            color = "Celltype",
+            order = sample.order
+  )+
+    theme_base()+
+    theme(
+      axis.text.x = element_text(
+        angle = 90,
+        hjust = 1,
+        vjust = 1,
+        size = 1
+      ),
+      legend.position = "bottom",
+      legend.text = element_text(size = 8),
+      legend.title = element_text(size = 8)
+    )
+}
+
+#MAF分段绘制acc折线图
+acc=c()
+dat=list(xy1, xy3, xy5)
+for (i in dat) {
+  i$MAF <- i$MAF * 100
+  ss_0.01 <-round(mean(i[i$MAF >=0 & i$MAF < 0.01,]$xiaoyi_acc),3)
+  ss_0.1 <- round(mean(i[i$MAF >=0.01 & i$MAF < 0.1,]$xiaoyi_acc),3)
+  ss_1 <- round(mean(i[i$MAF >= 0.1 & i$MAF < 1,]$xiaoyi_acc),3)
+  ss_10 <- round(mean(i[i$MAF >= 1 & i$MAF < 10,]$xiaoyi_acc),3)
+  ss_50 <- round(mean(i[i$MAF >= 10 & i$MAF <= 50,]$xiaoyi_acc),3)
+  acc_part <- c(ss_0.01,ss_0.1, ss_1,ss_10, ss_50)
+  acc <- append(acc, acc_part)
+}
+type=c(rep(c("Xiaoyi_1x", "Xiaoyi_3x", "Xiaoyi_5x"),each=5))
+MAF=c(rep(c("0.01","0.1","1","10","50"), 3))
+acc <- as.numeric(acc)
+
+draw_dat=data.frame(type=type, MAF=MAF, acc=acc)
+
+library(ggplot2)
+ggplot(draw_dat, aes(MAF, acc, group=type, color=type))+
+  theme_bw()+
+  #scale_fill_manual(values = c("#8ECFC9","#FA7F6F","#82B0D2"))+
+  scale_color_manual(values = c("#8ECFC9","#FA7F6F","#82B0D2"))+
+  geom_point(size=4)+
+  geom_line(position = position_dodge(0.1), cex=1.3)+
+  geom_text(mapping = aes(label=acc),fontface = 'bold',size=3,nudge_y = -0.0001, nudge_x = -0.2)+
+  labs(x="MAF(%)", y="Accuracy")+
+  ggtitle("Evaluation of Chromosome 1")+
+  theme(plot.title = element_text(hjust = 0.5,size = 15, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10),
+        legend.position = c(.9,.8),
+        plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA),
+        axis.title = element_text(size = 14, face = 'bold'),
+        axis.text = element_text(size = 11, face = 'bold'))
+
+#upset
+library(UpSetR)
+listinput <- list(baseline = bas$cis, acute = acu$cis, chronic = chro$cis )
+listinput <- fromList(listinput)
+setsBarColors <- c("#EA4335","#FBBC05","#34A853")
+upset(listinput,
+      nsets = length(listinput),
+      nintersects = 1000,
+      sets = c("baseline","acute","chronic"),
+      order.by = "freq",
+      keep.order = TRUE,
+      text.scale = c(1.5,1.2,1.2,1,1.5,1),
+      point.size = 3,
+      line.size = 1.0,
+      matrix.color = "#4285F4",
+      main.bar.color = 'black',
+      sets.bar.color = setsBarColors)
+
+#density plot
+dens_dat <- data.frame(type=c(rep(c("1X","3X","5X"), each=nrow(xy_1x_all_acc))), 
+                       acc=c(xy_1x_all_acc$acc,xy_3x_all_acc$acc,xy_5x_all_acc$acc))
+
+ggplot(dens_dat, aes(x=acc, group=type,color=type,fill=type))+
+  theme_classic()+
+  scale_x_continuous(limits = c(0,1), breaks = seq(0,1,by=0.2))+
+  scale_color_manual(values = c("#339999","#FA7F6F","#82B0D2"))+
+  scale_fill_manual(values = c("#339999","#FA7F6F","#82B0D2"))+
+  ggtitle("Density Plot of Accuracy")+
+  xlab("accuracy")+
+  geom_density(
+    lwd=1,
+    linetype=1,
+    alpha=0.7,
+    adjust=1.75)+
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = "right",
+        legend.title = element_blank())+
+  theme(axis.title = element_text(size = 16, face = 'bold'),
+        axis.text = element_text(size = 11, face = 'bold'))+
+  theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
+
+#画小提琴图
+p <- ggplot(com1, aes(group, accuracy, fill=group))+
+  theme_bw()+
+  scale_fill_manual(values = c("#CC3333", "#339999"))+
+  #scale_y_continuous(limits = c(0,1.2), breaks = seq(0,1.1,0.2))+
+  geom_violin(trim = FALSE, color="white")+
+  geom_boxplot(width=0.04, position = position_dodge(0.9), outlier.shape = NA)+
+  labs(y="accuracy", x ="")+
+  stat_compare_means(
+    #comparisons = list(c("Glimpse", "Xiaoyi")),
+    aes(label = "p.format"),
+    label.x = 0.5, label.y = 1, size=8,
+    method = "wilcox.test",
+    paired = T)+
+  theme(plot.title = element_text(hjust = 0.5,
+                                  size = 15, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10),
+        legend.position = "top",
+        plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA),
+        axis.title = element_text(size = 14, face = 'bold'),
+        axis.text = element_text(size = 11, face = 'bold'))
+
+p
+
+#水平柱状图
+memory <- c(1.7,4.2,6.6,5.6,13,21)
+time <- c(0.06,0.068,0.159,1.6,3.84,4.78)
+group <- c(rep(c("Xiaoyi","Glimpse"), each = 3))
+group
+type <- c("Xiaoyi_1x","Xiaoyi_3x","Xiaoyi_5x",
+          "Glimpse_1x","Glimpse_3x","Glimpse_5x")
+dat <- data.frame(group, type, memory, time)
+dat$type <- factor(dat$type, levels = c("Xiaoyi_1x","Xiaoyi_3x","Xiaoyi_5x",
+                                        "Glimpse_1x","Glimpse_3x","Glimpse_5x"))
+dat_memory <- dat[,c(1,2,3)]
+library(ggplot2)
+ggplot(dat, aes(x=type,y=memory, fill=group))+
+  theme_bw()+
+  geom_bar(stat = "identity")+
+  scale_fill_manual(values = c("#DFC286","#82B0D2"))+
+  scale_y_continuous(expand=c(0,0), limits = c(0,23))+
+  geom_text(aes(x=type, y=memory, label=memory),hjust="left", size = 6)+
+  coord_flip()+
+  labs(x="", y="Memory(G)")+
+  theme(plot.title = element_text(hjust = 0.5,
+                                  size = 15, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 15),
+        legend.position = c(0.85,0.4),
+        #plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA),
+        axis.title = element_text(size = 14, face = 'bold'),
+        axis.text = element_text(size = 11, face = 'bold'))
+
+#柱状图
+library(ggplot2)
+ggplot(dat1_cis, aes(x=period,y=number))+
+  theme_bw()+
+  geom_bar(stat = "identity",fill="#DFC286")+
+  #scale_fill_manual(values = c("#DFC286"))+
+  scale_y_continuous(#expand=c(0,0), 
+    limits = c(0,415))+
+  geom_text(aes(x=period,y=number, label=number),vjust= -0.5, size = 6)+
+  labs(x="", y="Numbers of eGenes")+
+  theme(plot.title = element_text(hjust = 0.5,
+                                  size = 15, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 15),
+        legend.position = c(0.85,0.4),
+        #plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA),
+        axis.title = element_text(size = 18, face = 'bold'),
+        axis.text = element_text(size = 16, face = 'bold'))
+
+##通路富集热图
+mycoldown<-colorRampPalette(c("green","white"))(5)
+mycolup<-colorRampPalette(c("white","pink","tomato"))(95)
+mycol<-c(mycoldown,mycolup)
+p3<-pheatmap(dt,cluster_rows=F,cluster_cols=F,
+             display_numbers=T,number_format="%.3f",
+             border="white",
+             fontsize_number=7,
+             fontsize_col = 8,
+             fontsize_row = 8,
+             angle_col = 90,
+             legend_breaks=c(0.05,0.25,0.5,0.75,0.95),
+             legend_labels=c("0.05","0.25","0.5","0.75","0.95"),
+             color = mycol)
+p3
