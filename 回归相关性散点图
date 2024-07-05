@@ -1,0 +1,125 @@
+###regression
+library(ggplot2)
+library(ggthemes)
+library(ggpubr)
+library(ggpmisc)
+library(patchwork)
+##H18 people
+raw_dat <- read.table("~/Desktop/usb/dat/high_altitude/HA2018/HA2018.sleuth.norm_tpm.txt", header = T, row.names = 1)
+genes <- data.frame(genes=rownames(raw_dat))
+dat <- log2(raw_dat + 1)
+
+target <- c("CEBPD","SMAD6","ADM","ZMIZ1","CXADR","RIN2","IGF1R","TFRC","NDRG1","CCNG2","MOB3A",
+            "MIDEAS","NFKBIA","KATNBL1P6","EPAS1")
+dat_sub <- dat[target,]
+
+dat_sub_baseline <- dat_sub[,grep("^A",colnames(dat_sub))]
+dat_sub_baseline <- cbind(period=c(rep("Baseline",ncol(dat_sub_baseline))), as.data.frame(t(dat_sub_baseline)))
+
+dat_sub_acute <- dat_sub[,grep("^B",colnames(dat_sub))]
+dat_sub_acute <- cbind(period=c(rep("Acute",ncol(dat_sub_acute))), as.data.frame(t(dat_sub_acute)))
+
+dat_sub_chronic <- dat_sub[,grep("^C", colnames(dat_sub))]
+dat_sub_chronic <- cbind(period=c(rep("Chronic",ncol(dat_sub_chronic))), as.data.frame(t(dat_sub_chronic)))
+
+for (i in target[2:length(target)]){
+  result_name=paste0("./plot/peak_gene/CEBPD_regression/","HA2018-",i,".pdf")
+  pdf(result_name, width = 20, height = 8)
+  
+  cebpd_baseline=dat_sub_baseline[,"CEBPD"]
+  cebpd_acute=dat_sub_acute[,"CEBPD"]
+  cebpd_chronic=dat_sub_chronic[,"CEBPD"]
+  
+  #i="SMAD6"
+  ep_baseline=dat_sub_baseline[,i]
+  cebpd_baseline=dat_sub_baseline[,"CEBPD"]
+  p1 <- ggplot(dat_sub_baseline, aes(cebpd_baseline,ep_baseline))+
+    theme_few()+
+    geom_smooth(method = "lm",se=FALSE, color="black", formula = y~x)+
+    geom_point(size=4, alpha=0.5, color="#E64B35FF")+
+    stat_poly_eq(formula = y~x,
+                 aes(label=paste(..eq.label..,
+                                 ..rr.label..,
+                                 ..p.value.label..,
+                                 sep = "~~~")),
+                 parse = TRUE,size=6)+
+    geom_jitter(shape=21, size=2.5)+
+    #scale_fill_manual(values = c("#E64B35FF","#00A087FF","#4DBBD5FF"))+
+    # labs(x=expression(bold("CEBPD"~Log[2]~"(TMP expression)")), 
+    #      y=expression(bold(i~Log[2]~"(TMP expression)")))+
+    # labs(x=expression(paste("Normalized", italic(" CEBPD" )," TMP expression")), 
+    #      y=expression(paste("Normalized",italic(i),"TMP expression")))+
+    labs(x=paste("Normalized","CEBPD","expression"),
+         y=paste("Normalized",i,"expression"))+
+    
+    theme(plot.title = element_text(hjust = 0.5,size = 18, face = "bold"),
+          axis.title=element_text(size = 18, face = "bold"),
+          axis.text = element_text(size = 16, face = "bold"),
+          plot.margin = margin(1, 1, 1, 1, unit = "cm"),
+          legend.position = "NA"
+          )+
+    ggtitle(paste0("HA2018-","Baseline"))
+  
+  ep_acute=dat_sub_acute[,i]
+  cebpd_acute=dat_sub_acute[,"CEBPD"]
+  p2 <- ggplot(dat_sub_acute, aes(cebpd_acute,ep_acute))+
+    theme_few()+
+    geom_smooth(method = "lm",se=FALSE, color="black", formula = y~x)+
+    geom_point(size=4, alpha=0.5, color="#00A087FF")+
+    stat_poly_eq(formula = y~x,
+                 aes(label=paste(..eq.label..,
+                                 ..rr.label..,
+                                 ..p.value.label..,
+                                 sep = "~~~")),
+                 parse = TRUE,size=6)+
+    geom_jitter(shape=21, size=2.5)+
+    #scale_fill_manual(values = c("#E64B35FF","#00A087FF","#4DBBD5FF"))+
+    # labs(x=expression(bold("CEBPD"~Log[2]~"(TMP expression)")), 
+    #      y=expression(bold(i~Log[2]~"(TMP expression)")))+
+    # labs(x=expression(paste("Normalized", italic(" CEBPD" )," TMP expression")), 
+    #      y=expression(paste("Normalized",italic(i),"TMP expression")))+
+    labs(x=paste("Normalized","CEBPD","expression"),
+         y=paste("Normalized",i,"expression"))+
+    
+    theme(plot.title = element_text(hjust = 0.5,size = 18, face = "bold"),
+          axis.title=element_text(size = 18, face = "bold"),
+          axis.text = element_text(size = 16, face = "bold"),
+          plot.margin = margin(1, 1, 1, 1, unit = "cm"),
+          legend.position = "NA"
+    )+
+    ggtitle(paste0("HA2018-","Acute"))
+  
+  ep_chronic=dat_sub_chronic[,i]
+  cebpd_chronic=dat_sub_chronic[,"CEBPD"]
+  p3 <- ggplot(dat_sub_chronic, aes(cebpd_chronic,ep_chronic))+
+    theme_few()+
+    geom_smooth(method = "lm",se=FALSE, color="black", formula = y~x)+
+    geom_point(size=4, alpha=0.5, color="#4DBBD5FF", fill="#4DBBD5FF")+
+    stat_poly_eq(formula = y~x,
+                 aes(label=paste(..eq.label..,
+                                 ..rr.label..,
+                                 ..p.value.label..,
+                                 sep = "~~~")),
+                 parse = TRUE,size=6)+
+    geom_jitter(shape=21, size=2.5)+
+    #scale_fill_manual(values = c("#E64B35FF","#00A087FF","#4DBBD5FF"))+
+    # labs(x=expression(bold("CEBPD"~Log[2]~"(TMP expression)")), 
+    #      y=expression(bold(i~Log[2]~"(TMP expression)")))+
+    # labs(x=expression(paste("Normalized", italic(" CEBPD" )," TMP expression")), 
+    #      y=expression(paste("Normalized",italic(i),"TMP expression")))+
+    labs(x=paste("Normalized","CEBPD","expression"),
+         y=paste("Normalized",i,"expression"))+
+    
+    theme(plot.title = element_text(hjust = 0.5,size = 18, face = "bold"),
+          axis.title=element_text(size = 18, face = "bold"),
+          axis.text = element_text(size = 16, face = "bold"),
+          plot.margin = margin(1, 1, 1, 1, unit = "cm"),
+          legend.position = "NA"
+    )+
+    ggtitle(paste0("HA2018-","Chronic"))
+
+  p <- p1+p2+p3+theme(plot.margin = margin(1, 1, 1, 1, unit = "cm"))
+  print(p)
+  dev.off()
+}
+
