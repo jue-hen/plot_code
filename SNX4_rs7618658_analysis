@@ -1,0 +1,1573 @@
+library(readr)
+library(vcfR)
+library(stringr)
+SNP_info <- read.table('./SNX4_rs7618658/2019.info', sep = "\t", comment.char = "", fill = T)
+
+###样本基因型
+genotype <- SNP_info[,c(10:ncol(SNP_info))]
+genotype <- as.data.frame(t(genotype))
+#genotype <- cbind(sample=rownames(genotype), genotype)
+colnames(genotype) <- c("sample","genotype")
+genotype$sample <- gsub(".depth","",genotype$sample)
+
+ori_sample <- na.omit(genotype$sample)
+snp_peop <- character()
+
+for (i in (1:length(ori_sample))) {
+  if (ori_sample[i] != "") {
+    j <- as.character(ori_sample[i])
+    snp_peop <- append(snp_peop, j)
+  }
+}
+length(snp_peop)
+
+ori_genotype <- na.omit(genotype$genotype)
+snp_geo <- character()
+
+for (i in (1:length(ori_genotype))) {
+  if (ori_genotype[i] != "") {
+    j <- as.character(ori_genotype[i])
+    snp_geo <- append(snp_geo, j)
+  }
+}
+length(snp_geo)
+
+genotype_new <- data.frame(sample=snp_peop, genotype=snp_geo)
+table(genotype_new$genotype)
+
+genotype$sample
+genotype_new$sample
+write.table(genotype_new,"./2019_result/genotype_info.txt", sep = "\t", quote = F, row.names = F)
+
+genotype_new$genotype <- factor(genotype_new$genotype, levels = c("0/0","0/1","1/1"), labels = c("CC","CT","TT"))
+table(genotype_new$genotype)
+
+snp_peop <- gsub("^HA","",genotype_new$sample)
+snp_peop <- as.character(as.numeric(snp_peop))
+
+####样本AMS等表型数据
+pheno <- read.table("./2019_phenotype.csv", header = T, sep = ",")
+colnames(pheno)
+
+pheno_base <- pheno[grep("^A", pheno$sample_index),]
+pheno_acute <- pheno[grep("^B", pheno$sample_index),]
+pheno_chonic <- pheno[grep("^C", pheno$sample_index),]
+
+base_peo <- gsub("^A","", pheno_base$sample_index)
+acute_peo <- gsub("^B","", pheno_acute$sample_index)
+chronic_peo <- gsub("^C","", pheno_chonic$sample_index)
+
+inter <- Reduce(intersect, list(base_peo, acute_peo, chronic_peo))
+
+##交集人数
+target <- intersect(snp_peop, inter)
+length(target) #191
+
+####交集数据
+genotype_new$sample <- snp_peop
+# rownames(genotype_new) <- genotype_new$sample
+# genotype_dat <- genotype_new[paste0("HA",str_pad(target,"4",side = "left", pad = "0")),]
+intersect(snp_peop, target)
+length(intersect(snp_peop, target))
+
+target <- str_sort(target, numeric = TRUE)
+genotype_dat <- genotype_new[match(target, genotype_new$sample),]
+table(genotype_dat$genotype)
+write.table(genotype_dat, "./2019_result/genotype_matched_phenotype_191_info.txt", row.names = F, sep = "\t", quote = F)
+
+pheno_peo <- c(paste0("A", target), paste0("B", target), paste0("C",target))
+pheno_dat <- pheno[pheno$sample_index %in% pheno_peo,]
+write.table(pheno_dat, "./2019_result/phenotype_genotype_matched_573_info.txt", row.names = F, quote = F, sep = "\t")
+
+###分析该位点在AMS和non-AMS人群中的分布
+geno <- read.table("./2019_result/genotype_matched_phenotype_191_info.txt", header = T, sep = "\t")
+pheno <- read.table("./2019_result/phenotype_genotype_matched_573_info.txt", header = T, sep = "\t")
+
+test <- gsub("A","",pheno$sample_index[grep("^A", pheno$sample_index)])
+table(test == geno$sample)
+
+
+period <- c(rep("Baseline",191), rep("Acute",191), rep("Chronic",191))
+pheno <- cbind(sample_index=pheno[,1], period=period, genotype=c(geno$genotype, geno$genotype, geno$genotype), pheno[,2:ncol(pheno)])
+write.table(pheno, "./2019_result/genotype_matched_phenotype_191_merged_info.txt", row.names = F, sep = "\t", quote = F)
+
+colnames(pheno)
+idx <- c("sample_index","period","genotype","Headache","Inappetite","Fatigue","Dizziness","LLS",
+         "AMS","AMS2","Age","Height","Weight","BMI","SpO2","EPO","RBC","HGB","HCT","MCH","MCHC","MCV")
+pheno_sub <- pheno[,idx]
+
+tt <- pheno_sub[grep("A",pheno_sub$sample_index),]
+geno <- cbind(geno, AMS=tt$AMS)
+write.table(geno, "./2019_result/genotype_matched_phenotype_191_info.txt", row.names = F, sep = "\t", quote = F)
+
+###AMS和non-AMS人群中基因型分布
+tt <- pheno_sub[grep("A",pheno_sub$sample_index),]
+table(tt$AMS)
+ts <- pheno_sub[grep("B",pheno_sub$sample_index),]
+table(tt$AMS)
+
+AMS <- geno[which(geno$AMS == "1"), ]
+table(AMS$genotype)
+non_AMS <- geno[which(geno$AMS == "0"),]
+table(non_AMS$genotype)
+
+draw_dat <- read.table("./2019_result/SNX4_rs7618658.csv", header = T, sep = ",")
+draw_dat$genotype <- factor(draw_dat$genotype, levels = c("CC","CT","TT"))
+draw_dat$status <- factor(draw_dat$status, levels = c("non-AMS","AMS"))
+library(ggplot2)
+library(Cairo)
+library(sysfonts)
+library(showtextdb)
+library(showtext)
+AMS_num <- as.data.frame(table(tt$AMS))[2,2]
+non_AMS_num <- as.data.frame(table(tt$AMS))[1,2]
+
+a <- font_files()
+#showtext_auto()
+font_add("Microsoft YaHei","/usr/share/fonts/truetype/myfonts/msyhbd.ttf")
+###并列柱状图
+CairoPDF("./2019_result/rs7618658不同基因型个体中AMS和non-AMS人群分布_柱状图.pdf",width = 10, height = 8)
+showtext_begin()
+p <- ggplot(draw_dat, aes(x=genotype, y=freq, fill=status))+
+  theme_bw()+
+  scale_fill_manual(values = c("#DFC286","#82B0D2"),
+                    breaks = c("non-AMS","AMS"),
+                    labels=c(paste0("non-AMS (",non_AMS_num,")"), paste0("AMS (",AMS_num,")")))+
+  scale_x_discrete(labels=c("CC"=paste0("CC (",CC_number,")"),
+                            "CT"=paste0("CT (",CT_number,")"),
+                            "TT"=paste0("TT (",TT_number,")")))+
+  geom_bar(stat = "identity", position = "dodge", width = 0.8)+
+  geom_text(aes(label=freq), position = position_dodge(width = 0.8), size=8, vjust=-0.25,fontface="bold")+
+  xlab(expression(paste(bolditalic("SNX4"),"  ",bold("rs7618658(C > T)"))))+
+  ylab("Frequency")+
+  ggtitle("rs7618658不同基因型个体中AMS和non-AMS人群分布\n")+
+  scale_y_continuous(expand=c(0,0),limits = c(0,90))+
+  theme(plot.title = element_text(hjust = 0.5,
+                                  size = 22, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.key.height = unit(2,"lines"),
+        legend.position = c(0.8,0.85),
+        plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
+        axis.title = element_text(size = 22, face = 'bold'),
+        axis.text = element_text(size = 18, face = 'bold'))
+print(p)
+showtext_end()
+dev.off()
+
+###堆叠柱状图
+library(scales)
+draw_dat$percent <- scales::percent(draw_dat$partion, accuracy = 0.01)
+CC_number <- 139
+CT_number <- 50
+TT_number <- 2
+
+CairoPDF("./2019_result/rs7618658不同基因型个体中AMS和non-AMS人群分布_柱状图_堆叠百分比.pdf",width = 10, height = 8)
+showtext_begin()
+p <- ggplot(draw_dat, aes(genotype, partion, fill=status, order=status))+
+     geom_bar(stat = "identity", width = 0.8, position = "fill", color="black")+
+     theme_bw()+
+     scale_y_continuous(labels = scales::percent)+
+     labs(x=expression(paste(bolditalic("SNX4"),"  ",bold("rs7618658(C > T)"))), y="Percentage", fill="status")+
+     scale_fill_manual(values = c("#DFC286","#82B0D2"),
+                    breaks = c("non-AMS","AMS"),
+                    labels=c(paste0("non-AMS (",non_AMS_num,")"), paste0("AMS (",AMS_num,")")))+
+     scale_x_discrete(labels=c("CC"=paste0("CC (",CC_number,")"),
+                               "CT"=paste0("CT (",CT_number,")"),
+                               "TT"=paste0("TT (",TT_number,")")))+
+     geom_text(aes(label = percent), size = 7, 
+               position = position_stack(vjust = 0.5), color = 'black', 
+               fontface = 'bold')+
+     ggtitle("rs7618658不同基因型个体中non-AMS和AMS人群分布\n")+
+     theme(plot.title = element_text(hjust = 0.5,
+                                  size = 22, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.key.height = unit(2,"lines"),
+        legend.position = "right",
+        plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
+        axis.title = element_text(size = 22, face = 'bold'),
+        axis.text = element_text(size = 18, face = 'bold'))
+print(p)
+showtext_end()
+dev.off()
+###卡方检验
+geno$AMS <- factor(geno$AMS, levels = c(0,1), labels = c("non-AMS","AMS"))
+tab <- table(geno$genotype, geno$AMS)
+chisq.test(tab, correct = F)
+
+###将CT和TT人数进行合并
+status <- c("AMS","AMS","non-AMS","non-AMS")
+genotype <- c("WT","MUT","WT","MUT")
+freq <- c(56,25,83,27)
+partion <- c(0.4,0.48,0.6,0.42)
+draw_dat <- data.frame(status, genotype, freq, partion)
+draw_dat$genotype <- factor(draw_dat$genotype, levels = c("WT","MUT"))
+draw_dat$status <- factor(draw_dat$status, levels = c("non-AMS","AMS"))
+
+WT_num <- 139
+MUT_num <- 52
+
+###并列柱状图
+CairoPDF("./2019_result/merge_WT_MUT/rs7618658不同基因型个体中AMS和non-AMS人群分布_柱状图.pdf",width = 10, height = 8)
+showtext_begin()
+p <- ggplot(draw_dat, aes(x=genotype, y=freq, fill=status))+
+  theme_bw()+
+  scale_fill_manual(values = c("#DFC286","#82B0D2"),
+                    breaks = c("non-AMS","AMS"),
+                    labels=c(paste0("non-AMS (",non_AMS_num,")"), paste0("AMS (",AMS_num,")")))+
+  geom_bar(stat = "identity", position = "dodge", width = 0.8)+
+  geom_text(aes(label=freq), position = position_dodge(width = 0.8), size=8, vjust=-0.25, fontface="bold")+
+  xlab(expression(paste(bolditalic("SNX4"),"  ",bold("rs7618658(C > T)"))))+
+  ylab("Frequency")+
+  ggtitle("rs7618658不同基因型个体中AMS和non-AMS人群分布\n")+
+  scale_y_continuous(expand=c(0,0),limits = c(0,90))+
+  scale_x_discrete(labels=c("WT"=paste0("CC (",WT_num,")"),
+                            "MUT"=paste0("CC/CT (",MUT_num,")")))+
+  theme(plot.title = element_text(hjust = 0.5,
+                                  size = 22, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.key.height = unit(2,"lines"),
+        legend.position = c(0.8,0.85),
+        plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
+        axis.title = element_text(size = 22, face = 'bold'),
+        axis.text = element_text(size = 18, face = 'bold'))
+print(p)
+showtext_end()
+dev.off()
+
+###堆叠柱状图
+draw_dat$percent <- scales::percent(draw_dat$partion, accuracy = 0.01)
+
+CairoPDF("./2019_result/merge_WT_MUT/rs7618658不同基因型个体中AMS和non-AMS人群分布_柱状图_堆叠百分比.pdf",width = 10, height = 8)
+showtext_begin()
+p <- ggplot(draw_dat, aes(genotype, partion, fill=status, order=status))+
+  geom_bar(stat = "identity", width = 0.8, position = "fill", color="black")+
+  theme_bw()+
+  scale_y_continuous(labels = scales::percent)+
+  scale_x_discrete(labels=c("WT"=paste0("CC (",WT_num,")"),
+                            "MUT"=paste0("CC/CT (",MUT_num,")")))+
+  labs(x=expression(paste(bolditalic("SNX4"),"  ",bold("rs7618658(C > T)"))), y="Percentage", fill="status")+
+  scale_fill_manual(values = c("#DFC286","#82B0D2"),
+                    breaks = c("non-AMS","AMS"),
+                    labels=c(paste0("non-AMS (",non_AMS_num,")"), paste0("AMS (",AMS_num,")")))+
+  geom_text(aes(label = percent), size = 8, 
+            position = position_stack(vjust = 0.5), color = 'black', 
+            fontface = 'bold')+
+  ggtitle("rs7618658不同基因型个体中AMS和non-AMS人群分布\n")+
+  theme(plot.title = element_text(hjust = 0.5,
+                                  size = 22, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.key.height = unit(2,"lines"),
+        legend.position = "right",
+        plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
+        axis.title = element_text(size = 22, face = 'bold'),
+        axis.text = element_text(size = 18, face = 'bold'))
+print(p)
+showtext_end()
+dev.off()
+
+tt <- matrix(draw_dat$freq, nrow = 2)
+rownames(tt) <- c("WT","MUT")
+colnames(tt) <- c("AMS","non-AMS")
+chisq.test(tt, correct = F)
+
+##等位基因频率
+tt <- matrix(c(0.85, 0.15, 0.87, 0.13), nrow = 2, byrow = T)
+chisq.test(tt, correct = F)
+
+###红细胞相关表型
+table(is.na(pheno_sub))
+shapiro.test(pheno_sub$SpO2) #5e-15
+shapiro.test(pheno_sub$EPO) #2e-16
+shapiro.test(pheno_sub$RBC) #1e-10
+shapiro.test(pheno_sub$HGB) #1e-12
+shapiro.test(pheno_sub$HCT) #1e-08
+shapiro.test(pheno_sub$MCH) #2e-16
+shapiro.test(pheno_sub$MCHC) #2e-16
+shapiro.test(pheno_sub$MCV) #2e-16
+write.table(pheno_sub, "./2019_result/merge_WT_MUT/红细胞相关表型_matched_genotype.csv", row.names = F, quote = F ,sep = "\t")
+
+options(digits =  4)
+base_pheno <- pheno_sub[grep("^A", pheno_sub$sample_index),]
+acute_pheno <- pheno_sub[grep("^B", pheno_sub$sample_index),]
+chronic_pheno <- pheno_sub[grep("^C", pheno_sub$sample_index),]
+
+target_pheno <- colnames(pheno_sub)[15:22]
+library(Hmisc)
+dat <- base_pheno
+extract_dat <- function(dat){
+  dat$genotype <- ifelse(dat$genotype == "CC", "WT", "MUT")
+  table(dat$genotype)
+  dat$genotype <- factor(dat$genotype, levels = c("WT","MUT"))
+  
+  wt <- dat[dat$genotype == "WT",c(15:22)]
+  wt <- apply(wt, 2, function(x)(impute(x,median)))
+  wt_res <- apply(wt, 2, quantile)
+  mut <- dat[dat$genotype == "MUT",c(15:22)]
+  mut <- apply(mut, 2, function(x)(impute(x,median)))
+  mut_res <- apply(mut, 2, quantile)
+  
+  res <- as.data.frame(matrix(nrow = 8, ncol = 3,0))
+  rownames(res) <- target_pheno
+  colnames(res) <- c("WT","MUT","p")
+  for (i in c(1:length(target_pheno))){
+    wt_tmp1 <- wt_res[2,i]
+    wt_tmp2 <- wt_res[4,i]
+    wt_tmp <- paste(round(wt_tmp1,2),round(wt_tmp2,2), sep = "~")
+    
+    mut_tmp1 <- mut_res[2,i]
+    mut_tmp2 <- mut_res[4,i]
+    mut_tmp <- paste(round(mut_tmp1,2),round(mut_tmp2,2), sep = "~")
+    
+    res[i,1] <- wt_tmp
+    res[i,2] <- mut_tmp
+    res[i,3] <- wilcox.test(wt[,i], mut[,i])$p.value
+  }
+  return(res)
+}
+###各指标数据
+baseline <- extract_dat(base_pheno)
+colnames(baseline) <- c("WT_baseline","MUT_baseline","p_baseline")
+acute <- extract_dat(acute_pheno)
+colnames(acute) <- c("WT_acute","MUT_acute","p_acute")
+chronic <- extract_dat(chronic_pheno)
+colnames(chronic) <- c("WT_chronic","MUT_chronic","p_chronic")
+res_wilcox <- cbind(pheno=target_pheno,baseline, acute, chronic)
+write.csv(res_wilcox, "./2019_result/merge_WT_MUT/红细胞相关血液指标表型比较.csv", row.names = F,quote = F)
+p.adjust(res_wilcox$p_baseline, method = "fdr")
+
+###t.test
+extract_dat_test <- function(dat){
+  dat$genotype <- ifelse(dat$genotype == "CC", "WT", "MUT")
+  table(dat$genotype)
+  dat$genotype <- factor(dat$genotype, levels = c("WT","MUT"))
+  
+  wt <- dat[dat$genotype == "WT",c(15:22)]
+  wt <- apply(wt, 2, function(x)(impute(x,median)))
+  wt_res <- apply(wt, 2, quantile)
+  mut <- dat[dat$genotype == "MUT",c(15:22)]
+  mut <- apply(mut, 2, function(x)(impute(x,median)))
+  mut_res <- apply(mut, 2, quantile)
+  
+  res <- as.data.frame(matrix(nrow = 8, ncol = 3,0))
+  rownames(res) <- target_pheno
+  colnames(res) <- c("WT","MUT","p")
+  for (i in c(1:length(target_pheno))){
+    wt_tmp1 <- wt_res[2,i]
+    wt_tmp2 <- wt_res[4,i]
+    wt_tmp <- paste(round(wt_tmp1,2),round(wt_tmp2,2), sep = "~")
+    
+    mut_tmp1 <- mut_res[2,i]
+    mut_tmp2 <- mut_res[4,i]
+    mut_tmp <- paste(round(mut_tmp1,2),round(mut_tmp2,2), sep = "~")
+    
+    res[i,1] <- wt_tmp
+    res[i,2] <- mut_tmp
+    res[i,3] <- t.test(wt[,i], mut[,i])$p.value
+  }
+  return(res)
+}
+
+baseline <- extract_dat_test(base_pheno)
+colnames(baseline) <- c("WT_baseline","MUT_baseline","p_baseline")
+acute <- extract_dat_test(acute_pheno)
+colnames(acute) <- c("WT_acute","MUT_acute","p_acute")
+chronic <- extract_dat_test(chronic_pheno)
+colnames(chronic) <- c("WT_chronic","MUT_chronic","p_chronic")
+res_t <- cbind(pheno=target_pheno,baseline, acute, chronic)
+write.csv(res_t, "./2019_result/merge_WT_MUT/红细胞相关血液指标表型比较_t_test.csv", row.names = F,quote = F)
+
+###表型数据绘图
+pheo_dat <- read.table("./2019_result/merge_WT_MUT/红细胞相关表型_matched_genotype.csv", header = T, sep = "\t")
+table(is.na(pheo_dat))
+table(pheo_dat$genotype)
+pheo_dat$genotype <- factor(pheo_dat$genotype, levels = c("WT","MUT"))
+pheo_dat$period <- factor(pheo_dat$period, levels = c("Baseline","Acute","Chronic"))
+
+library(Rmisc)
+str(pheo_dat)
+
+# dat <- pheo_dat
+# type <- "Baseline"
+# idx <- "HGB"
+extract_me_sd <- function(dat, type, idx){
+    dat_sub <- dat[dat$period == type,]
+    dat_sub_wt <- dat_sub[dat_sub$genotype =="WT",]
+    dat_sub_mut <- dat_sub[dat_sub$genotype == "MUT",]
+    
+    me_wt <- mean(dat_sub_wt[,idx])
+    sd_wt <- sd(dat_sub_wt[,idx])/sqrt(nrow(dat_sub_wt))
+    
+    me_mut <- mean(dat_sub_mut[,idx])
+    sd_mut <- sd(dat_sub_mut[,idx])/sqrt(nrow(dat_sub_mut))
+    
+    res <- data.frame(period=c(rep(type,2)),
+                      genotype=c("WT","MUT"),
+                      me=c(me_wt,me_mut),
+                      se=c(sd_wt,sd_mut))
+    return(res)
+}
+bas <- extract_me_sd(pheo_dat, "Baseline","HGB")
+acute <- extract_me_sd(pheo_dat, "Acute","HGB")
+chronic <- extract_me_sd(pheo_dat, "Chronic","HGB")
+draw_dat <- rbind(bas,acute,chronic)
+draw_dat$period <- factor(draw_dat$period, levels = c("Baseline","Acute","Chronic"))
+draw_dat$genotype <- factor(draw_dat$genotype, levels = c("WT","MUT"))
+
+CairoPDF("./2019_result/merge_WT_MUT/clinical_phenotype/rs7618658不同基因型个体在三个时期的HGB比较.pdf",width = 12, height = 8)
+showtext_begin()
+p <- ggplot(draw_dat, aes(x=period, y=me, group = genotype, color =genotype))+
+  theme_few()+
+  geom_line(position = position_dodge(0.1), cex=1)+
+  geom_point(size=3)+
+  geom_errorbar(aes(ymin=me-se, ymax=me+se), width=0.2)+
+  scale_color_manual(values = c("#DFC286","#82B0D2"),
+                    breaks = c("WT","MUT"),
+                    labels=c(paste0("CC (",139,")"), paste0("CT/TT (",52,")")))+
+  # stat_compare_means(
+  #   aes(group=genotype),
+  #   label = "p.signif",
+  #   method = "wilcox.test",
+  #   hide.ns = T,
+  #   size=8)+
+  ggtitle("rs7618658不同基因型个体在三个时期的血红蛋白浓度比较\n")+
+  labs(y =expression(paste(bold("HGB"),"  ",bold("(g/L)"))), x="Period")+
+  theme(plot.title = element_text(hjust = 0.5,
+                                  size = 22, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.key.height = unit(2,"lines"),
+        legend.position = "right",
+        plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
+        axis.title = element_text(size = 22, face = 'bold'),
+        axis.text = element_text(size = 18, face = 'bold'))
+print(p)
+showtext_end()
+dev.off()
+
+CairoPDF("./2019_result/merge_WT_MUT/clinical_phenotype/rs7618658不同基因型个体在三个时期的HGB比较_boxplot.pdf",width = 10, height = 8)
+showtext_begin()
+p <- ggboxplot(pheo_dat, x="period", y="HGB", fill = "genotype", 
+               color = "black",xlab = "Period")+
+  scale_fill_manual(values = c("#DFC286","#82B0D2"),
+                    breaks = c("WT","MUT"),
+                    labels=c(paste0("CC (",139,")"), paste0("CT/TT (",52,")")))+
+  stat_compare_means(
+    aes(group=genotype),
+    label = "p.signif",
+    method = "wilcox.test",
+    hide.ns = T,
+    size=8)+
+  ggtitle("rs7618658不同基因型个体在三个时期的血红蛋白浓度比较\n")+
+  labs(y =expression(paste(bold("HGB")," ",bold("(g/L)"))))+
+  theme(plot.title = element_text(hjust = 0.5,
+                                  size = 22, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.key.height = unit(2,"lines"),
+        legend.position = "right",
+        plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
+        axis.title = element_text(size = 22, face = 'bold'),
+        axis.text = element_text(size = 18, face = 'bold'))
+print(p)
+showtext_end()
+dev.off()
+
+
+##HCT
+bas <- extract_me_sd(pheo_dat, "Baseline","HCT")
+acute <- extract_me_sd(pheo_dat, "Acute","HCT")
+chronic <- extract_me_sd(pheo_dat, "Chronic","HCT")
+draw_dat <- rbind(bas,acute,chronic)
+draw_dat$period <- factor(draw_dat$period, levels = c("Baseline","Acute","Chronic"))
+draw_dat$genotype <- factor(draw_dat$genotype, levels = c("WT","MUT"))
+
+CairoPDF("./2019_result/merge_WT_MUT/clinical_phenotype/rs7618658不同基因型个体在三个时期的HCT比较.pdf",width = 12, height = 8)
+showtext_begin()
+p <- ggplot(draw_dat, aes(x=period, y=me, group = genotype, color =genotype))+
+  theme_few()+
+  geom_line(position = position_dodge(0.1), cex=1)+
+  geom_point(size=3)+
+  geom_errorbar(aes(ymin=me-se, ymax=me+se), width=0.2)+
+  scale_color_manual(values = c("#DFC286","#82B0D2"),
+                     breaks = c("WT","MUT"),
+                     labels=c(paste0("CC (",139,")"), paste0("CT/TT (",52,")")))+
+  # stat_compare_means(
+  #   aes(group=genotype),
+  #   label = "p.signif",
+  #   method = "wilcox.test",
+  #   hide.ns = T,
+  #   size=8)+
+  ggtitle("rs7618658不同基因型个体在三个时期的血细胞比容比较\n")+
+  labs(y =expression(paste(bold("HCT"),"  ",bold("%"))), x="Period")+
+  theme(plot.title = element_text(hjust = 0.5,
+                                  size = 22, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.key.height = unit(2,"lines"),
+        legend.position = "right",
+        plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
+        axis.title = element_text(size = 22, face = 'bold'),
+        axis.text = element_text(size = 18, face = 'bold'))
+print(p)
+showtext_end()
+dev.off()
+
+###
+CairoPDF("./2019_result/merge_WT_MUT/clinical_phenotype/rs7618658不同基因型个体在三个时期的HCT比较_boxplot.pdf",width = 10, height = 8)
+showtext_begin()
+p <- ggboxplot(pheo_dat, x="period", y="HCT", fill = "genotype", color = "black",
+               xlab = "Period")+
+  scale_fill_manual(values = c("#DFC286","#82B0D2"),
+                    breaks = c("WT","MUT"),
+                    labels=c(paste0("CC (",139,")"), paste0("CT/TT (",52,")")))+
+  stat_compare_means(
+    aes(group=genotype),
+    label = "p.signif",
+    method = "wilcox.test",
+    hide.ns = T,
+    size=8)+
+  ggtitle("rs7618658不同基因型个体在三个时期的血细胞比容比较\n")+
+  labs(y =expression(paste(bold("HCT"),"  ",bold("(%)"))))+
+  theme(plot.title = element_text(hjust = 0.5,
+                                  size = 22, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.key.height = unit(2,"lines"),
+        legend.position = "right",
+        plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
+        axis.title = element_text(size = 22, face = 'bold'),
+        axis.text = element_text(size = 18, face = 'bold'))
+print(p)
+showtext_end()
+dev.off()
+
+
+###转录组数据
+expr <- read.table("./HA2019.sleuth.norm_tpm.csv", header = T, sep = ",", row.names = 1)
+expr_base_peo <- colnames(expr)[grep("^A",colnames(expr))]
+expr_base_peo <- gsub("^A","",expr_base_peo)
+length(expr_base_peo) #200人
+ 
+expr_acute_peo <- colnames(expr)[grep("^B",colnames(expr))]
+expr_acute_peo <- gsub("^B","",expr_acute_peo)
+length(expr_acute_peo) #161人
+
+expr_chronic_peo <- colnames(expr)[grep("^C",colnames(expr))]
+expr_chronic_peo <- gsub("^C","",expr_chronic_peo)
+length(expr_chronic_peo) #181人
+
+int_expr <- Reduce(intersect, list(expr_base_peo, expr_acute_peo, expr_chronic_peo))
+length(int_expr) #142 人
+int_expr_peo <- gsub("^19HA","", int_expr)
+int_expr_peo <- as.character(as.numeric(int_expr_peo))
+
+
+###转录组与基因组交集人数
+length(intersect(int_expr_peo, snp_peop)) #130人
+exp_target_peo <- intersect(int_expr_peo, snp_peop) 
+
+
+expr_sub <- expr["SNX4",]
+expr_sub <- as.data.frame(t(expr_sub))
+expr_sub <- cbind(sample=rownames(expr_sub), expr_sub)
+
+table(exp_target_peo == exp_geno$sample)
+table(exp_geno$genotype)
+exp_geno$genotype <- ifelse(exp_geno$genotype == "CC", "WT","MUT")
+exp_geno$genotype <- factor(exp_geno$genotype, levels = c("WT","MUT"))
+
+tmp_peo <- paste0("19HA",str_pad(exp_target_peo, 4, side = "left", pad = "0"))
+exp_target <- expr_sub[c(paste0("A",tmp_peo),paste0("B",tmp_peo),paste0("C",tmp_peo)),]
+exp_target$period <- c(rep("Baseline",130), rep("Acute",130), rep("Chronic",130))
+exp_target$genotype <- c(rep(exp_geno$genotype,3))
+table(exp_target$genotype)
+
+###所有基因的矩阵
+expr_save <- as.data.frame(t(expr))
+expr_save <- cbind(sample=rownames(expr_save), expr_save)
+
+table(exp_target_peo == exp_geno$sample)
+table(exp_geno$genotype)
+# exp_geno$genotype <- ifelse(exp_geno$genotype == "CC", "WT","MUT")
+exp_geno$genotype <- factor(exp_geno$genotype, levels = c("WT","MUT"))
+
+tmp_peo <- paste0("19HA",str_pad(exp_target_peo, 4, side = "left", pad = "0"))
+exp_save <- expr_save[c(paste0("A",tmp_peo),paste0("B",tmp_peo),paste0("C",tmp_peo)),]
+exp_save <- cbind(period= c(rep("Baseline",130), rep("Acute",130), rep("Chronic",130)), genotype=c(rep(exp_geno$genotype,3)),
+                  exp_save)
+table(exp_target$genotype)
+write.table(exp_save, "./2019_result/merge_WT_MUT/transcriptome/matched_genome_transcriptome.txt", sep = "\t", row.names = F, quote = F)
+
+####绘图 不同基因型个体间
+exp_target$SNX4 <- log2(exp_target$SNX4)
+shapiro.test(exp_target$SNX4)
+
+num <- as.data.frame(table(exp_geno$genotype))
+library(ggpubr)
+CairoPDF("./2019_result/merge_WT_MUT/transcriptome/rs7618658不同基因型个体在三个时期的基因表达量比较.pdf",width = 10, height = 8)
+showtext_begin()
+p <- ggboxplot(exp_target, x="period", y="SNX4", fill = "genotype", color = "black",
+               xlab = "Period")+
+  scale_fill_manual(values = c("#DFC286","#82B0D2"),
+                    breaks = c("WT","MUT"),
+                    labels=c(paste0("CC (",num[1,2],")"), paste0("CT/TT (",num[2,2],")")))+
+  stat_compare_means(
+    aes(group=genotype),
+    label = "p.signif",
+    method = "wilcox.test",
+    hide.ns = F,
+    size=8)+
+  ggtitle("rs7618658不同基因型个体在三个时期的基因表达量比较\n")+
+  labs(y =expression(paste(bold("log"[2]),bold(" ("),bolditalic("SNX4"),"  ",bold("TPM expression level)"))))+
+  theme(plot.title = element_text(hjust = 0.5,
+                                  size = 22, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.key.height = unit(2,"lines"),
+        legend.position = "right",
+        plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
+        axis.title = element_text(size = 22, face = 'bold'),
+        axis.text = element_text(size = 18, face = 'bold'))
+print(p)
+showtext_end()
+dev.off()
+### 三个时期
+exp_target$samp_num <- gsub(".19HA","",exp_target$sample)
+exp_target$period <- factor(exp_target$period, levels = c("Baseline","Acute","Chronic"))
+library(ggthemes)
+CairoPDF("./2019_result/merge_WT_MUT/transcriptome/SNX4在三个时期的基因表达量比较.pdf",width = 10, height = 8)
+showtext_begin()
+p <- ggplot(exp_target, aes(period,SNX4,fill=period))+
+  theme_few()+
+  stat_boxplot(geom = "errorbar", width=0.15)+
+  geom_boxplot(size=0.5,outlier.shape = NA)+
+  geom_jitter(aes(fill=period), shape=21, size=2.5)+
+  scale_fill_manual(values = c("#E64B35FF","#00A087FF","#4DBBD5FF"))+
+  scale_y_continuous(limits = c(1,8.5))+
+  #geom_line(aes(group=samp_num), color="gray",lwd=0.5)+
+  labs(x="Period", y =expression(paste(bold("log"[2]),bold(" ("),bolditalic("SNX4"),"  ",bold("TPM expression level)"))))+
+  stat_compare_means(comparisons = list(c("Baseline","Acute"),
+                                        c("Baseline","Chronic"),
+                                        c("Acute","Chronic")),
+                     method = "wilcox.test",
+                     paired = T,
+                     label = "p.signif",
+                     size=8)+
+  theme(plot.title = element_text(hjust = 0.5,size = 18, face = "bold"),
+        axis.title=element_text(size = 18, face = "bold"),
+        axis.text = element_text(size = 16, face = "bold"),
+        plot.margin = margin(1, 1, 1, 1, unit = "cm"),
+        legend.text = element_text(size = 16, face = "bold"),
+        legend.title = element_text(size = 18, face = "bold"))+
+  ggtitle(expression(paste(bolditalic("SNX4"),bold("在三个时期的基因表达量比较"))))
+print(p)
+showtext_end()
+dev.off()
+####转录组数据的相关性分析
+exp_dat <- read.table("./2019_result/merge_WT_MUT/transcriptome/matched_genome_transcriptome.txt", header = T ,sep = "\t")
+table(is.na(exp_dat))
+geno_dat <- read.table("./2019_result/merge_WT_MUT/红细胞相关表型_matched_genotype.csv", header = T, sep = "\t")
+table(is.na(geno_dat))
+###插补缺少值
+library(gtools)
+na_sub <- function(dat,type){
+  # dat <- geno_dat
+  # type <- "Baseline"
+  dat$genotype <- ifelse(dat$genotype == "CC", "WT", "MUT")
+  dat$genotype <- factor(dat$genotype, levels = c("WT","MUT"))
+  dd <- dat[dat$period == type,]
+  
+  wt <- dd[dd$genotype == "WT",]
+  wt <- cbind(wt[,c(1:14)],apply(wt[,c(15:22)], 2, function(x)(impute(x,median))))
+  #wt <- apply(wt, 2, function(x)(impute(x,median)))
+  mut <- dd[dd$genotype == "MUT",]
+  mut <- cbind(mut[,c(1:14)],apply(mut[c(15:22)], 2, function(x)(impute(x,median))))
+  #mut <- apply(mut, 2, function(x)(impute(x,median)))
+  
+  dat_tmp <- rbind(wt,mut)
+  dat_tmp <- dat_tmp[mixedorder(dat_tmp[,1]),]
+  # dat_tmp$sample_index
+  return(dat_tmp)
+}
+###去除缺失值
+base_test <- na_sub(geno_dat, "Baseline")
+table(is.na(base_test))
+acute_test <- na_sub(geno_dat,"Acute")
+chronic_test <- na_sub(geno_dat,"Chronic")
+na_sub_res <- rbind(base_test, acute_test, chronic_test)
+table(is.na(na_sub_res))
+write.table(na_sub_res,"./2019_result/merge_WT_MUT/红细胞相关表型_matched_genotype.csv", row.names = F, quote = F ,sep = "\t")
+
+geno_dat <- na_sub_res
+
+exp_dat_peo <- unique(as.character(as.numeric(gsub(".19HA","",exp_dat$sample))))
+geno_peo <- gsub("^A","",geno_dat$sample_index[grep("^A",geno_dat$sample_index)])
+exp_peo <- intersect(exp_dat_peo, geno_peo)
+length(exp_peo) #129
+
+#取基因组数据和表型数据
+geno_dat_exp <- geno_dat[match(c(paste0("A",exp_peo), paste0("B",exp_peo),paste0("C",exp_peo)),geno_dat$sample_index),]
+#取转录组数据
+tmp_peo <- paste0("19HA",str_pad(exp_peo, 4, side = "left",pad="0"))
+target_gene <- c("SNX4","EPO","EPOR","TF","TFR","GATA1","GFI1B","SOX6","KLF1","ERFE","ANK1","SLC4A1","JAK2","STAT5",
+                "PINK1","LC3","P62","BNIP3","BNIP3L")
+table(target_gene %in% colnames(exp_dat))
+tt <- target_gene[target_gene %in% colnames(exp_dat)]
+exp_sub <- cbind(exp_dat[match(c(paste0("A",tmp_peo),paste0("B",tmp_peo),paste0("C",tmp_peo)),exp_dat$sample),c(1:4)],exp_dat[match(c(paste0("A",tmp_peo),paste0("B",tmp_peo),paste0("C",tmp_peo)),exp_dat$sample),tt])
+
+test <- paste0("A",as.numeric(gsub(".19HA","",exp_sub[exp_sub$period == "Baseline",]$sample)))
+table(test == geno_dat_exp[geno_dat_exp$period == "Baseline",]$sample_index)
+
+exp_sub <- cbind(exp_sub[,c(1:3)], log2(exp_sub[,tt]+1))
+
+###合并转录组和表型数据
+exp_pheo_dat <- cbind(exp_sub,geno_dat_exp[,c(4:ncol(geno_dat_exp))])
+table(is.na(exp_pheo_dat))
+colnames(exp_pheo_dat)[31] <- "EPO_pheno"
+colnames(exp_pheo_dat)
+write.table(exp_pheo_dat, "./2019_result/merge_WT_MUT/transcriptome/correlation_analysis_file.txt", row.names = F, quote = F, sep = "\t")
+exp_pheo_dat$period <- factor(exp_pheo_dat$period, levels = c("Baseline","Acute","Chronic"))
+###EPOR表达量变化
+# epor <- exp_pheo_dat[,c(1,6)]
+CairoPDF("./2019_result/merge_WT_MUT/transcriptome/EPOR在三个时期的基因表达量比较.pdf",width = 10, height = 8)
+showtext_begin()
+p <- ggplot(exp_pheo_dat, aes(period,EPOR,fill=period))+
+  theme_few()+
+  stat_boxplot(geom = "errorbar", width=0.15)+
+  geom_boxplot(size=0.5,outlier.shape = NA)+
+  geom_jitter(aes(fill=period), shape=21, size=2.5)+
+  scale_fill_manual(values = c("#E64B35FF","#00A087FF","#4DBBD5FF"))+
+  scale_y_continuous(limits = c(1,8))+
+  #geom_line(aes(group=samp_num), color="gray",lwd=0.5)+
+  labs(x="Period", y =expression(paste(bold("log"[2]),bold(" ("),bolditalic("EPOR"),"  ",bold("TPM expression level)"))))+
+  stat_compare_means(comparisons = list(c("Baseline","Acute"),
+                                        c("Baseline","Chronic"),
+                                        c("Acute","Chronic")),
+                     method = "wilcox.test",
+                     paired = T,
+                     label = "p.signif",
+                     size=8)+
+  theme(plot.title = element_text(hjust = 0.5,size = 18, face = "bold"),
+        axis.title=element_text(size = 18, face = "bold"),
+        axis.text = element_text(size = 16, face = "bold"),
+        plot.margin = margin(1, 1, 1, 1, unit = "cm"),
+        legend.text = element_text(size = 16, face = "bold"),
+        legend.title = element_text(size = 18, face = "bold"))+
+  ggtitle(expression(paste(bolditalic("EPOR"),bold("在三个时期的基因表达量比较"))))
+print(p)
+showtext_end()
+dev.off()
+
+###correlation
+tar_phe <- colnames(exp_pheo_dat)[c(5:18,30:37)]
+#所有基因型一起分析
+dat_exp_base <- exp_pheo_dat[exp_pheo_dat$period == "Baseline",]
+dat_exp_acute <- exp_pheo_dat[exp_pheo_dat$period == "Acute",]
+dat_exp_chronic <- exp_pheo_dat[exp_pheo_dat$period == "Chronic",]
+
+calculate_coeff <- function(dat){
+  res <- as.data.frame(matrix(nrow = length(tar_phe), ncol = 2,0))
+  rownames(res) <- tar_phe
+  for (i in c(1:length(tar_phe))){
+    tt <- tar_phe[i]
+    cor_tmp <- cor.test(dat$SNX4, dat[,tt], method = "spearman", exact = F)
+    res[i,1] <- cor_tmp$estimate
+    res[i,2] <- cor_tmp$p.value
+  }
+  res <- na.omit(res)
+  return(res)
+}
+
+exp_baseline <- calculate_coeff(dat_exp_base)
+colnames(exp_baseline) <- c("coefficient_base","p_base")
+
+exp_acute <- calculate_coeff(dat_exp_acute)
+colnames(exp_acute) <- c("coefficient_acute","p_acute")
+
+exp_chronic <- calculate_coeff(dat_exp_chronic)
+colnames(exp_chronic) <- c("coefficient_chronic","p_chronic")
+
+exp_res <- cbind(indice=rownames(exp_acute),exp_baseline, exp_acute, exp_chronic)
+p_val <- exp_res[,grep("p",colnames(exp_res))]
+p_val_fdr <- apply(p_val, 2, function(x)p.adjust(x,method = "fdr"))
+colnames(p_val_fdr) <- paste0(colnames(p_val_fdr),"_fdr")
+
+exp_res <- cbind(exp_res, p_val_fdr)
+colnames(exp_res)
+exp_res <- exp_res[,c(1:3,8,4:5,9,6:7,10)]
+write.table(exp_res,"./2019_result/merge_WT_MUT/transcriptome/SNX4_gene_expression_correlation_analysis_result.txt",
+            row.names = F ,quote = F ,sep = "\t")
+
+
+###不同基因型分开
+calculate_coeff_split <- function(dat){
+  res <- as.data.frame(matrix(nrow = length(tar_phe), ncol = 4,0))
+  rownames(res) <- tar_phe
+  wt_sub <- dat[dat$genotype == "WT",]
+  mut_sub <- dat[dat$genotype == "MUT",]
+  for (i in c(1:length(tar_phe))){
+    tt <- tar_phe[i]
+    cor_tmp_wt <- cor.test(wt_sub$SNX4, wt_sub[,tt], method = "spearman", exact = F)
+    res[i,1] <- cor_tmp_wt$estimate
+    res[i,2] <- cor_tmp_wt$p.value
+    
+    cor_tmp_mut <- cor.test(mut_sub$SNX4, mut_sub[,tt], method = "spearman", exact = F)
+    res[i,3] <- cor_tmp_mut$estimate
+    res[i,4] <- cor_tmp_mut$p.value
+  }
+  res <- na.omit(res)
+  return(res)
+}
+
+exp_baseline_split <- calculate_coeff_split(dat_exp_base)
+colnames(exp_baseline_split) <- c("coefficient_base_wt","p_base_wt","coefficient_base_mut","p_base_mut")
+
+exp_acute_split <- calculate_coeff_split(dat_exp_acute)
+colnames(exp_acute_split) <- c("coefficient_acute_wt","p_acute_wt","coefficient_acute_mut","p_acute_mut")
+
+exp_chronic_split <- calculate_coeff_split(dat_exp_chronic)
+colnames(exp_chronic_split) <- c("coefficient_chronic_wt","p_chronic_wt","coefficient_chronic_mut","p_chronic_mut")
+
+exp_res_split <- cbind(indice=rownames(exp_acute_split),exp_baseline_split, exp_acute_split, exp_chronic_split)
+p_val_split <- exp_res_split[,grep("p",colnames(exp_res_split))]
+p_val_split_fdr <- apply(p_val_split, 2, function(x)p.adjust(x,method = "fdr"))
+colnames(p_val_split_fdr) <- paste0(colnames(p_val_split_fdr),"_fdr")
+
+res_split <- cbind(exp_res_split, p_val_split_fdr)
+colnames(res_split)
+res_split <- res_split[,c(1:3,14,4:5,15,6:7,16,8:9,17,10:11,18,12:13,19)]
+write.table(res_split, "./2019_result/merge_WT_MUT/transcriptome/SNX4_gene_expression_correlation_analysis_genotype_split_result.txt",
+            row.names = F ,quote = F ,sep = "\t")
+
+####不同基因型个体间基因表达量差异变化
+exp_dat <- read.table("./2019_result/merge_WT_MUT/transcriptome/correlation_analysis_file.txt", header = T ,sep = "\t")
+colnames(exp_dat)
+exp_dat <- exp_dat[,c(1:18)]
+target_pheno <- colnames(exp_dat)[4:18]
+####提取四分位数并进行wilcox检验
+extract_dat_quantitle <- function(x,type){
+  # dat$genotype <- ifelse(dat$genotype == "CC", "WT", "MUT")
+  # table(dat$genotype)
+  # x <- exp_dat
+  # type <- "Baseline"
+  dat <- x[x$period == type,]
+  dat$genotype <- factor(dat$genotype, levels = c("WT","MUT"))
+  
+  wt <- dat[dat$genotype == "WT",c(4:18)]
+  # wt <- apply(wt, 2, function(x)(impute(x,median)))
+  wt_res <- apply(wt, 2, quantile)
+  mut <- dat[dat$genotype == "MUT",c(4:18)]
+  # mut <- apply(mut, 2, function(x)(impute(x,median)))
+  mut_res <- apply(mut, 2, quantile)
+  
+  res <- as.data.frame(matrix(nrow = length(target_pheno), ncol = 3,0))
+  rownames(res) <- target_pheno
+  colnames(res) <- c("WT","MUT","p")
+  for (i in c(1:length(target_pheno))) {
+    wt_tmp1 <- wt_res[2,i]
+    wt_tmp2 <- wt_res[4,i]
+    wt_tmp <- paste(round(wt_tmp1,2),round(wt_tmp2,2), sep = "~")
+    
+    mut_tmp1 <- mut_res[2,i]
+    mut_tmp2 <- mut_res[4,i]
+    mut_tmp <- paste(round(mut_tmp1,2),round(mut_tmp2,2), sep = "~")
+    
+    res[i,1] <- wt_tmp
+    res[i,2] <- mut_tmp
+    res[i,3] <- wilcox.test(wt[,i], mut[,i])$p.value
+  }
+  colnames(res) <- paste0(colnames(res),"_",type)
+  return(res)
+}
+
+base <- extract_dat_quantitle(exp_dat, "Baseline")
+acute <- extract_dat_quantitle(exp_dat, "Acute")
+chronic <- extract_dat_quantitle(exp_dat, "Chronic")
+res <- cbind(gene=rownames(base), base, acute, chronic)
+write.table(res, "./2019_result/merge_WT_MUT/transcriptome/不同基因型个体基因表达量比较_wilcox_test.csv", quote = F, row.names = F ,sep = ",")
+
+###提取均值做t.test
+extract_dat <- function(x,type){
+  # dat$genotype <- ifelse(dat$genotype == "CC", "WT", "MUT")
+  # table(dat$genotype)
+  # x <- exp_dat
+  # type <- "Baseline"
+  dat <- x[x$period == type,]
+  dat$genotype <- factor(dat$genotype, levels = c("WT","MUT"))
+  
+  wt <- dat[dat$genotype == "WT",c(4:18)]
+  # wt <- apply(wt, 2, function(x)(impute(x,median)))
+  wt_res_m <- apply(wt, 2, mean)
+  wt_res_sd <- apply(wt, 2, sd)
+  mut <- dat[dat$genotype == "MUT",c(4:18)]
+  # mut <- apply(mut, 2, function(x)(impute(x,median)))
+  mut_res_m <- apply(mut, 2, mean)
+  mut_res_sd <- apply(mut, 2, sd)
+  
+  res <- as.data.frame(matrix(nrow = length(target_pheno), ncol = 3,0))
+  rownames(res) <- target_pheno
+  colnames(res) <- c("WT","MUT","p")
+  for (i in c(1:length(target_pheno))) {
+
+    wt_tmp <- paste(round(wt_res_m[i],2),round(wt_res_sd[i],2), sep = "±")
+    
+    mut_tmp <- paste(round(mut_res_m[i],2),round(mut_res_sd[i],2), sep = "±")
+    
+    res[i,1] <- wt_tmp
+    res[i,2] <- mut_tmp
+    res[i,3] <- t.test(wt[,i], mut[,i])$p.value
+  }
+  colnames(res) <- paste0(colnames(res),"_",type)
+  return(res)
+}
+
+base <- extract_dat(exp_dat, "Baseline")
+acute <- extract_dat(exp_dat, "Acute")
+chronic <- extract_dat(exp_dat, "Chronic")
+res <- cbind(gene=rownames(base), base, acute, chronic)
+write.table(res, "./2019_result/merge_WT_MUT/transcriptome/不同基因型个体基因表达量比较_t_test.csv", quote = F, row.names = F ,sep = ",")
+
+###相关性绘图
+exp_dat <- read.table("./2019_result/merge_WT_MUT/transcriptome/correlation_analysis_file.txt", header = T ,sep = "\t")
+colnames(exp_dat)
+target <- colnames(exp_dat)[c(4:18,29:37)]
+
+library(ggplot2)
+library(ggthemes)
+library(ggpubr)
+library(ggpmisc)
+library(patchwork)
+dat_sub_baseline <- exp_dat[exp_dat$period == "Baseline",]
+dat_sub_acute <- exp_dat[exp_dat$period == "Acute",]
+dat_sub_chronic <- exp_dat[exp_dat$period == "Chronic",]
+for (i in target[2:length(target)]){
+  result_name=paste0("./2019_result/merge_WT_MUT/transcriptome/regression/","SNX4-",i,".pdf")
+  pdf(result_name, width = 20, height = 8)
+  
+  cebpd_baseline=dat_sub_baseline[,"SNX4"]
+  cebpd_acute=dat_sub_acute[,"SNX4"]
+  cebpd_chronic=dat_sub_chronic[,"SNX4"]
+  
+  #i="SMAD6"
+  ep_baseline=dat_sub_baseline[,i]
+  cebpd_baseline=dat_sub_baseline[,"SNX4"]
+  p1 <- ggplot(dat_sub_baseline, aes(cebpd_baseline,ep_baseline))+
+    theme_few()+
+    geom_smooth(method = "lm",se=FALSE, color="black", formula = y~x)+
+    geom_point(size=4, alpha=0.5, color="#E64B35FF")+
+    stat_poly_eq(formula = y~x,
+                 aes(label=paste(..eq.label..,
+                                 ..rr.label..,
+                                 ..p.value.label..,
+                                 sep = "~~~")),
+                 parse = TRUE,size=6)+
+    geom_jitter(shape=21, size=2.5)+
+    #scale_fill_manual(values = c("#E64B35FF","#00A087FF","#4DBBD5FF"))+
+    # labs(x=expression(bold("CEBPD"~Log[2]~"(TMP expression)")), 
+    #      y=expression(bold(i~Log[2]~"(TMP expression)")))+
+    # labs(x=expression(paste("Normalized", italic(" CEBPD" )," TMP expression")), 
+    #      y=expression(paste("Normalized",italic(i),"TMP expression")))+
+    labs(x=paste("Normalized","SNX4","expression"),
+         y=paste("Normalized",i,"expression"))+
+    
+    theme(plot.title = element_text(hjust = 0.5,size = 18, face = "bold"),
+          axis.title=element_text(size = 18, face = "bold"),
+          axis.text = element_text(size = 16, face = "bold"),
+          plot.margin = margin(1, 1, 1, 1, unit = "cm"),
+          legend.position = "NA"
+    )+
+    ggtitle(paste0("HA2019-","Baseline"))
+  
+  ep_acute=dat_sub_acute[,i]
+  cebpd_acute=dat_sub_acute[,"SNX4"]
+  p2 <- ggplot(dat_sub_acute, aes(cebpd_acute,ep_acute))+
+    theme_few()+
+    geom_smooth(method = "lm",se=FALSE, color="black", formula = y~x)+
+    geom_point(size=4, alpha=0.5, color="#00A087FF")+
+    stat_poly_eq(formula = y~x,
+                 aes(label=paste(..eq.label..,
+                                 ..rr.label..,
+                                 ..p.value.label..,
+                                 sep = "~~~")),
+                 parse = TRUE,size=6)+
+    geom_jitter(shape=21, size=2.5)+
+    #scale_fill_manual(values = c("#E64B35FF","#00A087FF","#4DBBD5FF"))+
+    # labs(x=expression(bold("CEBPD"~Log[2]~"(TMP expression)")), 
+    #      y=expression(bold(i~Log[2]~"(TMP expression)")))+
+    # labs(x=expression(paste("Normalized", italic(" CEBPD" )," TMP expression")), 
+    #      y=expression(paste("Normalized",italic(i),"TMP expression")))+
+    labs(x=paste("Normalized","SNX4","expression"),
+         y=paste("Normalized",i,"expression"))+
+    
+    theme(plot.title = element_text(hjust = 0.5,size = 18, face = "bold"),
+          axis.title=element_text(size = 18, face = "bold"),
+          axis.text = element_text(size = 16, face = "bold"),
+          plot.margin = margin(1, 1, 1, 1, unit = "cm"),
+          legend.position = "NA"
+    )+
+    ggtitle(paste0("HA2019-","Acute"))
+  
+  ep_chronic=dat_sub_chronic[,i]
+  cebpd_chronic=dat_sub_chronic[,"SNX4"]
+  p3 <- ggplot(dat_sub_chronic, aes(cebpd_chronic,ep_chronic))+
+    theme_few()+
+    geom_smooth(method = "lm",se=FALSE, color="black", formula = y~x)+
+    geom_point(size=4, alpha=0.5, color="#4DBBD5FF", fill="#4DBBD5FF")+
+    stat_poly_eq(formula = y~x,
+                 aes(label=paste(..eq.label..,
+                                 ..rr.label..,
+                                 ..p.value.label..,
+                                 sep = "~~~")),
+                 parse = TRUE,size=6)+
+    geom_jitter(shape=21, size=2.5)+
+    #scale_fill_manual(values = c("#E64B35FF","#00A087FF","#4DBBD5FF"))+
+    # labs(x=expression(bold("CEBPD"~Log[2]~"(TMP expression)")), 
+    #      y=expression(bold(i~Log[2]~"(TMP expression)")))+
+    # labs(x=expression(paste("Normalized", italic(" CEBPD" )," TMP expression")), 
+    #      y=expression(paste("Normalized",italic(i),"TMP expression")))+
+    labs(x=paste("Normalized","SNX4","expression"),
+         y=paste("Normalized",i,"expression"))+
+    
+    theme(plot.title = element_text(hjust = 0.5,size = 18, face = "bold"),
+          axis.title=element_text(size = 18, face = "bold"),
+          axis.text = element_text(size = 16, face = "bold"),
+          plot.margin = margin(1, 1, 1, 1, unit = "cm"),
+          legend.position = "NA"
+    )+
+    ggtitle(paste0("HA2019-","Chronic"))
+  
+  p <- p1+p2+p3+theme(plot.margin = margin(1, 1, 1, 1, unit = "cm"))
+  print(p)
+  dev.off()
+}
+
+
+
+#####蛋白组数据
+pro_dat <- read.table("./2019_proteome_metabolic/protein/pro_2019_0417_rmC222.csv", header = T, sep = ",")
+target_pro <- c("SNX4","EPO","EPOR","TF","TFR","GATA1","GFI1B","SOX6","KLF1","ERFE","ANK1","SLC4A1","JAK2","STAT5",
+                "PINK1","LC3","P62","BNIP3","BNIP3L")
+table(target_pro %in% colnames(pro_dat))
+tmp <- target_pro[target_pro %in% colnames(pro_dat)]
+  
+pro_sub <- cbind(samp_idx=pro_dat[,1], pro_dat[,tmp])
+apply(pro_sub[,2:ncol(pro_sub)],2,mean)
+
+pro_base_peo <- pro_sub$samp_idx[grep("^A", pro_sub$samp_idx)]
+pro_base_peo <- gsub("^A","",pro_base_peo)
+length(pro_base_peo) #97
+
+pro_acute_peo <- pro_sub$samp_idx[grep("^B", pro_sub$samp_idx)]
+pro_acute_peo <- gsub("^B","",pro_acute_peo)
+length(pro_acute_peo) #97
+
+pro_chronic_peo <- pro_sub$samp_idx[grep("^C", pro_sub$samp_idx)]
+pro_chronic_peo <- gsub("^C","",pro_chronic_peo)
+length(pro_chronic_peo) #78
+
+pro_idx <- Reduce(intersect, list(pro_base_peo, pro_acute_peo, pro_chronic_peo))
+length(pro_idx)
+
+genotype <- read.table("./2019_result/genotype_info.txt", header = T, sep = "\t")
+genotype$sam_num  <- as.character(as.numeric(gsub("^HA","",genotype$sample)))
+
+##平原期和急性期交集人数
+length(intersect(pro_base_peo, pro_acute_peo)) #97人
+length(intersect(pro_base_peo, pro_chronic_peo)) #78人
+
+###蛋白组和基因组交集人数
+pro_peo <- intersect(pro_idx, genotype$sam_num)
+length(pro_peo) #70
+
+geno_pro <- genotype[match(pro_peo, genotype$sam_num),]
+table(geno_pro$sam_num == pro_peo)
+table(geno_pro$genotype)
+geno_pro$genotype <- ifelse(geno_pro$genotype == "0/0", "WT", "MUT")
+geno_pro$genotype <- factor(geno_pro$genotype, levels = c("WT","MUT"))
+table(geno_pro$genotype)
+pro_tmp <- as.data.frame(table(geno_pro$genotype))
+
+pro_WT <- pro_tmp[1,2]
+pro_MUT <- pro_tmp[2,2]
+
+pro_samp_tmp <- c(paste0("A",pro_peo),paste0("B",pro_peo), paste0("C",pro_peo))
+pro_new <- pro_sub[match(pro_samp_tmp, pro_sub$samp_idx),]
+pro_new <- cbind(genotype=c(rep(geno_pro$genotype,3)), samp_num=c(rep(geno_pro$sam_num,3)),
+                 period=c(rep(c("Baseline","Acute","Chronic"),each=length(pro_peo))), pro_new)
+write.table(pro_new, "./2019_result/merge_WT_MUT/proteome/matched_genotype.txt", row.names = F, quote = F, sep = "\t")
+
+####绘图 不同基因型个体间
+shapiro.test(pro_new$SNX4)
+# pro_new$SNX4 <- scale(pro_new$SNX4)
+
+library(ggpubr)
+table(is.na(pro_new$SNX4))
+CairoPDF("./2019_result/merge_WT_MUT/proteome/rs7618658不同基因型个体在三个时期的蛋白表达量比较.pdf",width = 10, height = 8)
+showtext_begin()
+p <- ggboxplot(pro_new, x="period", y="SNX4", fill = "genotype", color = "black",
+               xlab = "Period")+
+  scale_fill_manual(values = c("#DFC286","#82B0D2"),
+                    breaks = c("WT","MUT"),
+                    labels=c(paste0("CC (",pro_WT,")"), paste0("CT/TT (",pro_MUT,")")))+
+  stat_compare_means(
+    aes(group=genotype),
+    label = "p.signif",
+    method = "wilcox.test",
+    hide.ns = F,
+    size=8)+
+  ggtitle("rs7618658不同基因型个体在三个时期的蛋白表达量比较\n")+
+  labs(y =expression(paste(bold("SNX4"),"  ",bold("protein expression level"))))+
+  theme(plot.title = element_text(hjust = 0.5,
+                                  size = 22, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.key.height = unit(2,"lines"),
+        legend.position = "right",
+        plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
+        axis.title = element_text(size = 22, face = 'bold'),
+        axis.text = element_text(size = 18, face = 'bold'))
+print(p)
+showtext_end()
+dev.off()
+
+
+dat <- read.table("./2019_result/merge_WT_MUT/proteome/correlation_analysis.txt", header = T)
+shapiro.test(dat$ANK1)
+
+num <- as.data.frame(table(dat[dat$period == "Baseline",]$genotype))
+dat$genotype <- factor(dat$genotype, levels = c("WT","MUT"))
+dat$period <- factor(dat$period, levels = c("Baseline","Acute","Chronic"))
+
+library(ggpubr)
+CairoPDF("./2019_result/merge_WT_MUT/proteome/rs7618658不同基因型个体在三个时期的TF蛋白表达量比较.pdf",width = 10, height = 8)
+showtext_begin()
+p <- ggboxplot(dat, x="period", y="TF", fill = "genotype", color = "black",
+               xlab = "Period")+
+  scale_fill_manual(values = c("#DFC286","#82B0D2"),
+                    breaks = c("WT","MUT"),
+                    labels=c(paste0("CC (",46,")"), paste0("CT/TT (",24,")")))+
+  stat_compare_means(
+    aes(group=genotype),
+    label = "p.signif",
+    method = "wilcox.test",
+    hide.ns = T,
+    size=8)+
+  ggtitle("rs7618658不同基因型个体在三个时期的TF蛋白表达量比较\n")+
+  labs(y =expression(paste(bold("TF"),"  ",bold("protein expression level"))))+
+  theme(plot.title = element_text(hjust = 0.5,
+                                  size = 22, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.key.height = unit(2,"lines"),
+        legend.position = "right",
+        plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
+        axis.title = element_text(size = 22, face = 'bold'),
+        axis.text = element_text(size = 18, face = 'bold'))
+print(p)
+showtext_end()
+dev.off()
+
+###ANK1
+library(ggpubr)
+CairoPDF("./2019_result/merge_WT_MUT/proteome/rs7618658不同基因型个体在三个时期的ANK1蛋白表达量比较.pdf",width = 10, height = 8)
+showtext_begin()
+p <- ggboxplot(dat, x="period", y="TF", fill = "genotype", color = "black",
+               xlab = "Period")+
+  scale_fill_manual(values = c("#DFC286","#82B0D2"),
+                    breaks = c("WT","MUT"),
+                    labels=c(paste0("CC (",46,")"), paste0("CT/TT (",24,")")))+
+  stat_compare_means(
+    aes(group=genotype),
+    label = "p.signif",
+    method = "wilcox.test",
+    hide.ns = T,
+    size=8)+
+  ggtitle("rs7618658不同基因型个体在三个时期的ANK1蛋白表达量比较\n")+
+  labs(y =expression(paste(bold("ANK1"),"  ",bold("protein expression level"))))+
+  theme(plot.title = element_text(hjust = 0.5,
+                                  size = 22, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.key.height = unit(2,"lines"),
+        legend.position = "right",
+        plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
+        axis.title = element_text(size = 22, face = 'bold'),
+        axis.text = element_text(size = 18, face = 'bold'))
+print(p)
+showtext_end()
+dev.off()
+
+
+
+### 三个时期
+library(ggthemes)
+library(tidyverse)
+pro_new$period <- factor(pro_new$period, levels = c("Baseline","Acute","Chronic"))
+ss=pro_new %>% group_by(period) %>% summarise(m=mean(SNX4), s=sd(SNX4))
+
+CairoPDF("./2019_result/merge_WT_MUT/proteome/SNX4在三个时期的蛋白表达量比较.pdf",width = 10, height = 8)
+showtext_begin()
+p <- ggplot(pro_new, aes(period,SNX4,fill=period))+
+  theme_few()+
+  stat_boxplot(geom = "errorbar", width=0.15)+
+  geom_boxplot(size=0.5,outlier.shape = NA)+
+  geom_jitter(aes(fill=period), shape=21, size=2.5)+
+  scale_fill_manual(values = c("#E64B35FF","#00A087FF","#4DBBD5FF"))+
+  #scale_y_continuous(limits = c(1,8.5))+
+  #geom_line(aes(group=samp_num), color="gray",lwd=0.5)+
+  labs(x="Period", y =expression(paste(bold("log"[2]),bold(" ("),bolditalic("SNX4"),"  ",bold("TPM expression level)"))))+
+  stat_compare_means(comparisons = list(c("Baseline","Acute"),
+                                        c("Baseline","Chronic"),
+                                        c("Acute","Chronic")),
+                     method = "wilcox.test",
+                     paired = T,
+                     label = "p.signif",
+                     size=8)+
+  geom_text(data = ss, aes(period, y= 2.6,
+                           label=paste(sprintf("%.3f",m), sprintf("%.3f",s), sep = " ± ")),
+            size=8, hjust=0.5)+
+  theme(plot.title = element_text(hjust = 0.5,size = 18, face = "bold"),
+        axis.title=element_text(size = 18, face = "bold"),
+        axis.text = element_text(size = 16, face = "bold"),
+        plot.margin = margin(1, 1, 1, 1, unit = "cm"),
+        legend.text = element_text(size = 16, face = "bold"),
+        legend.title = element_text(size = 18, face = "bold"))+
+  ggtitle(expression(paste(bold("SNX4"),bold("在三个时期的蛋白表达量比较"))))
+print(p)
+showtext_end()
+dev.off()
+
+##SNX4 蛋白相关性分析
+pheno <- read.table("./2019_result/merge_WT_MUT/红细胞相关表型_matched_genotype.csv", header = T)
+table(is.na(pheno))
+pro_new <- read.table("./2019_result/merge_WT_MUT/proteome/matched_genotype.txt", header = T)
+pheno_peo_tmp <- gsub("^A","",pheno$sample_index[grep("^A", pheno$sample_index)])
+length(intersect(pheno_peo_tmp, pro_new$samp_num)) # 69人
+
+length(intersect(pheno$sample_index, pro_new$samp_idx))#207
+pro_phen_geno <- intersect(pheno$sample_index, pro_new$samp_idx)
+
+pheno_pro <- pheno[match(pro_phen_geno, pheno$sample_index),]
+pro_pheno <- pro_new[match(pro_phen_geno, pro_new$samp_idx),]
+table(pheno_pro$sample_index == pro_pheno$samp_idx)
+
+##开始分析
+dat_pro <- cbind(pro_pheno, AMS=pheno_pro$AMS, pheno_pro[,c(15:ncol(pheno_pro))])
+write.table(dat_pro, "./2019_result/merge_WT_MUT/proteome/correlation_analysis.txt", row.names = F, quote = F ,sep = "\t")
+#所有基因型一起分析
+tar <- colnames(dat_pro)[c(6:10,12:19)]
+dat_pro_base <- dat_pro[dat_pro$period == "Baseline",]
+dat_pro_acute <- dat_pro[dat_pro$period == "Acute",]
+dat_pro_chronic <- dat_pro[dat_pro$period == "Chronic",]
+
+calculate_coeff <- function(dat){
+    res <- as.data.frame(matrix(nrow = length(tar), ncol = 2,0))
+    rownames(res) <- tar
+    for (i in c(1:length(tar))){
+      tt <- tar[i]
+      cor_tmp <- cor.test(dat$SNX4, dat[,tt], method = "spearman", exact = F)
+      res[i,1] <- cor_tmp$estimate
+      res[i,2] <- cor_tmp$p.value
+    }
+    res <- na.omit(res)
+    return(res)
+}
+
+pro_baseline <- calculate_coeff(dat_pro_base)
+colnames(pro_baseline) <- c("coefficient_base","p_base")
+
+pro_acute <- calculate_coeff(dat_pro_acute)
+colnames(pro_acute) <- c("coefficient_acute","p_acute")
+
+pro_chronic <- calculate_coeff(dat_pro_chronic)
+colnames(pro_chronic) <- c("coefficient_chronic","p_chronic")
+
+pro_res <- cbind(indice=rownames(pro_acute),pro_baseline, pro_acute, pro_chronic)
+
+
+###fdr矫正
+pro_baseline$p_base_fdr <- p.adjust(pro_baseline$p_base, method = "fdr")
+pro_acute$p_acute_fdr <- p.adjust(pro_acute$p_acute, method = "fdr")
+pro_chronic$p_chronic_fdr <- p.adjust(pro_chronic$p_chronic, method = "fdr")
+pro_res_fdr <- cbind(indice=rownames(pro_acute),pro_baseline, pro_acute, pro_chronic)
+write.table(pro_res_fdr, "./2019_result/merge_WT_MUT/proteome/SNX4_correlation_analysis_result.txt",
+            row.names = F ,quote = F ,sep = "\t")
+
+###不同基因型分开
+calculate_coeff_split <- function(dat){
+  res <- as.data.frame(matrix(nrow = length(tar), ncol = 4,0))
+  rownames(res) <- tar
+  wt_sub <- dat[dat$genotype == "WT",]
+  mut_sub <- dat[dat$genotype == "MUT",]
+  for (i in c(1:length(tar))){
+    tt <- tar[i]
+    cor_tmp_wt <- cor.test(wt_sub$SNX4, wt_sub[,tt], method = "spearman", exact = F)
+    res[i,1] <- cor_tmp_wt$estimate
+    res[i,2] <- cor_tmp_wt$p.value
+    
+    cor_tmp_mut <- cor.test(mut_sub$SNX4, mut_sub[,tt], method = "spearman", exact = F)
+    res[i,3] <- cor_tmp_mut$estimate
+    res[i,4] <- cor_tmp_mut$p.value
+  }
+  res <- na.omit(res)
+  return(res)
+}
+
+pro_baseline_split <- calculate_coeff_split(dat_pro_base)
+colnames(pro_baseline_split) <- c("coefficient_base_wt","p_base_wt","coefficient_base_mut","p_base_mut")
+
+pro_acute_split <- calculate_coeff_split(dat_pro_acute)
+colnames(pro_acute_split) <- c("coefficient_acute_wt","p_acute_wt","coefficient_acute_mut","p_acute_mut")
+
+pro_chronic_split <- calculate_coeff_split(dat_pro_chronic)
+colnames(pro_chronic_split) <- c("coefficient_chronic_wt","p_chronic_wt","coefficient_chronic_mut","p_chronic_mut")
+
+pro_res_split <- cbind(indice=rownames(pro_acute_split),pro_baseline_split, pro_acute_split, pro_chronic_split)
+p_val <- pro_res_split[,grep("p",colnames(pro_res_split))]
+p_val_fdr <- apply(p_val, 2, function(x)p.adjust(x,method = "fdr"))
+colnames(p_val_fdr) <- paste0(colnames(p_val_fdr),"_fdr")
+
+res_split <- cbind(pro_res_split, p_val_fdr)
+colnames(res_split)
+res_split <- res_split[,c(1:3,14,4:5,15,6:7,16,8:9,17,10:11,18,12:13,19)]
+write.table(res_split, "./2019_result/merge_WT_MUT/proteome/SNX4_correlation_analysis_genotype_split_result.txt",
+            row.names = F ,quote = F ,sep = "\t")
+####不同基因型个体蛋白表达量比较
+pro <- read.table("./2019_result/merge_WT_MUT/proteome/matched_genotype.txt", header = T)
+pro_dat <- pro[,c(1:8)]
+target_pheno <- colnames(pro)[5:8]
+####提取四分位数并进行wilcox检验
+extract_dat_quantitle <- function(x,type){
+  # dat$genotype <- ifelse(dat$genotype == "CC", "WT", "MUT")
+  # table(dat$genotype)
+  # x <- exp_dat
+  # type <- "Baseline"
+  dat <- x[x$period == type,]
+  dat$genotype <- factor(dat$genotype, levels = c("WT","MUT"))
+  
+  wt <- dat[dat$genotype == "WT",c(5:8)]
+  # wt <- apply(wt, 2, function(x)(impute(x,median)))
+  wt_res <- apply(wt, 2, quantile)
+  mut <- dat[dat$genotype == "MUT",c(5:8)]
+  # mut <- apply(mut, 2, function(x)(impute(x,median)))
+  mut_res <- apply(mut, 2, quantile)
+  
+  res <- as.data.frame(matrix(nrow = length(target_pheno), ncol = 3,0))
+  rownames(res) <- target_pheno
+  colnames(res) <- c("WT","MUT","p")
+  for (i in c(1:length(target_pheno))) {
+    wt_tmp1 <- wt_res[2,i]
+    wt_tmp2 <- wt_res[4,i]
+    wt_tmp <- paste(round(wt_tmp1,2),round(wt_tmp2,2), sep = "~")
+    
+    mut_tmp1 <- mut_res[2,i]
+    mut_tmp2 <- mut_res[4,i]
+    mut_tmp <- paste(round(mut_tmp1,2),round(mut_tmp2,2), sep = "~")
+    
+    res[i,1] <- wt_tmp
+    res[i,2] <- mut_tmp
+    res[i,3] <- wilcox.test(wt[,i], mut[,i])$p.value
+  }
+  colnames(res) <- paste0(colnames(res),"_",type)
+  return(res)
+}
+
+base <- extract_dat_quantitle(pro_dat, "Baseline")
+acute <- extract_dat_quantitle(pro_dat, "Acute")
+chronic <- extract_dat_quantitle(pro_dat, "Chronic")
+res <- cbind(gene=rownames(base), base, acute, chronic)
+write.table(res, "./2019_result/merge_WT_MUT/proteome/不同基因型个体蛋白表达量比较_wilcox_test.csv", quote = F, row.names = F ,sep = ",")
+
+###提取均值做t.test
+extract_dat <- function(x,type){
+  # dat$genotype <- ifelse(dat$genotype == "CC", "WT", "MUT")
+  # table(dat$genotype)
+  # x <- exp_dat
+  # type <- "Baseline"
+  dat <- x[x$period == type,]
+  dat$genotype <- factor(dat$genotype, levels = c("WT","MUT"))
+  
+  wt <- dat[dat$genotype == "WT",c(5:8)]
+  # wt <- apply(wt, 2, function(x)(impute(x,median)))
+  wt_res_m <- apply(wt, 2, mean)
+  wt_res_sd <- apply(wt, 2, sd)
+  mut <- dat[dat$genotype == "MUT",c(5:8)]
+  # mut <- apply(mut, 2, function(x)(impute(x,median)))
+  mut_res_m <- apply(mut, 2, mean)
+  mut_res_sd <- apply(mut, 2, sd)
+  
+  res <- as.data.frame(matrix(nrow = length(target_pheno), ncol = 3,0))
+  rownames(res) <- target_pheno
+  colnames(res) <- c("WT","MUT","p")
+  for (i in c(1:length(target_pheno))) {
+    
+    wt_tmp <- paste(round(wt_res_m[i],2),round(wt_res_sd[i],2), sep = "±")
+    
+    mut_tmp <- paste(round(mut_res_m[i],2),round(mut_res_sd[i],2), sep = "±")
+    
+    res[i,1] <- wt_tmp
+    res[i,2] <- mut_tmp
+    res[i,3] <- t.test(wt[,i], mut[,i])$p.value
+  }
+  colnames(res) <- paste0(colnames(res),"_",type)
+  return(res)
+}
+
+base <- extract_dat(pro_dat, "Baseline")
+acute <- extract_dat(pro_dat, "Acute")
+chronic <- extract_dat(pro_dat, "Chronic")
+res <- cbind(gene=rownames(base), base, acute, chronic)
+write.table(res, "./2019_result/merge_WT_MUT/proteome/不同基因型个体蛋白表达量比较_t_test.csv", quote = F, row.names = F ,sep = ",")
+
+
+###snp位点与表型数据、转录数据、蛋白数据的回归分析
+###红细胞相关表型
+pheno <- read.table("./2019_result/merge_WT_MUT/红细胞相关表型_matched_genotype.csv", header = T)
+table(is.na(pheno))
+
+target <- colnames(pheno)[15:22]
+###回归函数
+regression_analysis <- function(dat, type){
+    res <- as.data.frame(matrix(nrow = length(target), ncol = 3))
+    rownames(res) <- target
+    colnames(res) <- c("b_value","p_value","r_squre")
+    dat_sub <- dat[dat$period == type,]
+    dat_sub$dose <- ifelse(dat_sub$genotype == "WT",0,1)
+    for (i in c(1:length(target))) {
+      model <- lm(substitute(y~x,list(y=as.name(target[i]), x=as.name("dose"))),data=dat_sub)
+      # summary(model)
+      b <- as.numeric(model$coefficients[2])
+      r_squ <- summary(model)$r.squared
+      f_statistic <- summary(model)$fstatistic
+      p_value <- 1-pf(f_statistic[1], f_statistic[2], f_statistic[3])
+      res[i,1] <- b
+      res[i,2] <- p_value
+      res[i,3] <- r_squ
+    }
+    colnames(res) <- paste0(colnames(res),"_",type)
+    return(res)
+}
+
+pheno_base <- regression_analysis(pheno, "Baseline")
+pheno_acute <- regression_analysis(pheno, "Acute")
+pheno_chronic <- regression_analysis(pheno, "Chronic")
+pheno_res <- cbind(pheno=rownames(pheno_base),pheno_base, pheno_acute, pheno_chronic)
+write.table(pheno_res, "./2019_result/merge_WT_MUT/SNP_analysis/红细胞相关表型回归分析_SNX4_rs7618658.csv",
+            row.names = F, quote = F, sep = ",")
+
+###转录组数据
+snp_exp <- read.table("./2019_result/merge_WT_MUT/transcriptome/matched_genome_transcriptome.txt", header = T)
+target_gene <- c("SNX4","EPO","EPOR","TF","TFR","GATA1","GFI1B","SOX6","KLF1","ERFE","ANK1","SLC4A1","JAK2","STAT5",
+                 "PINK1","LC3","P62","BNIP3","BNIP3L")
+table(target_gene %in% colnames(snp_exp))
+target <- target_gene[target_gene %in% colnames(snp_exp)]
+
+exp_base <- regression_analysis(snp_exp, "Baseline")
+exp_acute <- regression_analysis(snp_exp, "Acute")
+exp_chronic <- regression_analysis(snp_exp, "Chronic")
+exp_res <- cbind(pheno=rownames(exp_base),exp_base, exp_acute, exp_chronic)
+write.table(exp_res, "./2019_result/merge_WT_MUT/SNP_analysis/转录组数据回归分析_SNX4_rs7618658.csv",
+            row.names = F, quote = F, sep = ",")
+
+###蛋白组数据
+snp_pro <- read.table("./2019_result/merge_WT_MUT/proteome/matched_genotype.txt", header = T)
+colnames(snp_pro)
+apply(snp_pro[,5:10],2,mean)
+target <- colnames(snp_pro)[5:8]
+
+pro_base <- regression_analysis(snp_pro, "Baseline")
+pro_acute <- regression_analysis(snp_pro, "Acute")
+pro_chronic <- regression_analysis(snp_pro, "Chronic")
+pro_res <- cbind(pheno=rownames(pro_base),pro_base, pro_acute, pro_chronic)
+write.table(pro_res, "./2019_result/merge_WT_MUT/SNP_analysis/蛋白组数据回归分析_SNX4_rs7618658.csv",
+            row.names = F, quote = F, sep = ",")
+
+####AMS人群的逻辑回归
+pheno <- read.table("./2019_result/merge_WT_MUT/红细胞相关表型_matched_genotype.csv", header = T)
+table(is.na(pheno))
+
+target <- c("AMS")
+logistical_regression <- function(dat, type){
+  # dat <- pheno
+  # type <- "Baseline"
+  res <- as.data.frame(matrix(nrow = length(target), ncol = 4))
+  rownames(res) <- target
+  colnames(res) <- c("b_value","p_value","OR","95%CI")
+  dat_sub <- dat[dat$period == type,]
+  dat_sub$dose <- ifelse(dat_sub$genotype == "WT",0,1)
+  for (i in c(1:length(target))) {
+    model <- glm(substitute(y~x,list(y=as.name(target[i]), x=as.name("dose"))),family = binomial(link = "logit"),data=dat_sub)
+    # summary(model)
+    coef_sum <- summary(model)$coefficients
+    b <- coef_sum[2,1]
+    or_estimate <- exp(coef_sum[,"Estimate"])[2]
+    lower_ci <- exp(coef_sum[,"Estimate"] - 1.96 * coef_sum[,"Std. Error"])[2]
+    upper_ci <- exp(coef_sum[,"Estimate"] + 1.96 * coef_sum[,"Std. Error"])[2]
+    p_value <- coef_sum[2,4]
+    
+    res[i,1] <- b
+    res[i,2] <- p_value
+    res[i,3] <- or_estimate
+    res[i,4] <- paste(lower_ci,upper_ci,sep = "~")
+  }
+  colnames(res) <- paste0(colnames(res),"_",type)
+  return(res)
+}
+
+AMS_base <- logistical_regression(pheno, "Baseline")
+AMS_acute <- logistical_regression(pheno, "Acute")
+AMS_chronic <- logistical_regression(pheno, "Chronic")
+AMS_res <- cbind(pheno=rownames(AMS_base),AMS_base, AMS_acute, AMS_chronic)
+write.table(AMS_res, "./2019_result/merge_WT_MUT/SNP_analysis/AMS回归分析_SNX4_rs7618658.csv",
+            row.names = F, quote = F, sep = ",")
+
+# pheno$dose <- ifelse(pheno$genotype == "WT",0,1)
+# model <- glm(AMS~dose,family = binomial(link = "logit"),data=pheno)
+# summary(model)$coefficients
+# coef_sum <- summary(model)$coefficients
+# 
+# b <- coef_sum[2,1] #0.3165
+# or_estimate <- exp(coef_sum[,"Estimate"])[2] #1.372
+# lower_ci <- exp(coef_sum[,"Estimate"] - 1.96 * coef_sum[,"Std. Error"])[2] #0.9479
+# upper_ci <- exp(coef_sum[,"Estimate"] + 1.96 * coef_sum[,"Std. Error"])[2] #1.987
+# p_value <- coef_sum[2,4] #0.09364
