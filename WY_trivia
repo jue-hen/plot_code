@@ -1,0 +1,228 @@
+dat <- read.table("./WY/mRNA.txt", header = T ,sep = "\t")
+cancer_dat <- dat[,c(52:ncol(dat))]
+idx <- data.frame(seq=rownames(dat), id=dat$id)
+tmp <- by(cancer_dat, idx$id,
+          function(x)rownames(x)[which.max(rowMeans(x))])
+probes <- as.character(tmp)
+exp <- cancer_dat[rownames(cancer_dat) %in% probes,]
+idx <- idx[idx$seq %in% rownames(exp),]
+table(rownames(exp) == idx$seq)
+rownames(exp) <- idx$id
+
+exp <- exp[rowMeans(exp)>1,]
+exp <- log2(exp + 1)
+exp <- as.data.frame(t(exp))
+
+rab32 <- exp$RAB32
+genes <- colnames(exp)[-grep("RAB32",colnames(exp))]
+length(genes)
+
+res <- as.data.frame(matrix(nrow = length(genes), ncol = 3, 0))
+colnames(res) <- c("gene_id","coefficient","p_value")
+
+for (i in c(1:length(genes))) {
+  gene_id <- genes[i]
+  tmp <- cor.test(rab32, exp[,gene_id], method = "pearson")
+  res[i,1] <- gene_id
+  res[i,2] <- tmp$estimate
+  res[i,3] <- tmp$p.value
+}
+res$fdr <- p.adjust(res$p_value, method = "fdr")
+range(res$coefficient)
+write.table(res, "./WY/pearson_coefficient_result.csv", sep = ",", 
+            row.names = F, quote = F)
+table(res$fdr < 0.05)
+table(res$fdr < 0.01)
+table(res$fdr < 5e-8)
+
+positive <- subset(res, res$coefficient > 0.90 & res$fdr < 0.01)
+positive$r2 <- positive$coefficient*positive$coefficient
+range(positive$coefficient)
+####8391
+write.table(positive,"./WY/positive_correlated_r_0.90_fdr_0.01.csv", row.names = F,
+            quote = F, sep = ",")
+
+negative <- subset(res, res$coefficient < -0.90 & res$fdr <0.01)
+dim(negative)
+###605
+write.table(negative,"./WY/negative_correlated_r_-0.90_fdr_0.01.csv", row.names = F,
+            quote = F, sep = ",")
+
+library(clusterProfiler)
+library(org.Hs.eg.db)
+genes_positive <- bitr(geneID = positive$gene_id,
+                       fromType = "SYMBOL",
+                       toType = c("ENTREZID","ENSEMBL"),
+                       OrgDb = "org.Hs.eg.db")
+genes_negative <- bitr(geneID = negative$gene_id,
+                       fromType = "SYMBOL",
+                       toType = c("ENTREZID","ENSEMBL"),
+                       OrgDb = "org.Hs.eg.db")
+dim(genes_negative)
+
+kegg_pos <- enrichKEGG(genes_positive$ENTREZID,
+                       organism = "hsa",
+                       keyType = "kegg",
+                       pvalueCutoff = 0.5,
+                       qvalueCutoff = 0.5)
+p1 <- dotplot(kegg_pos, showCategory=10, title="KEGG ENRICHMENT of Positive Correlated Genes(8391)")
+write.table(kegg_pos, "./WY/positive_correlated_kegg_enrichment.csv",
+            quote = F, sep = ",", row.names = F)
+
+kegg_nega <- enrichKEGG(genes_negative$ENTREZID,
+                       organism = "hsa",
+                       keyType = "kegg",
+                       pvalueCutoff = 0.9,
+                       qvalueCutoff = 0.9)
+p2 <- dotplot(kegg_nega, showCategory=10, title="KEGG ENRICHMENT of Negative Correlated Genes(605)")
+write.table(kegg_nega, "./WY/negative_correlated_kegg_enrichment.csv",
+            quote = F, sep = ",", row.names = F)
+library(ggpubr)
+library(ggplot2)
+p <- ggarrange(p1,p2,nrow = 1)
+pdf("./WY/KEGG_ENRICHMENT.pdf", width = 18, height = 8)
+print(p)
+dev.off()
+
+###GO-BP ENRICHMENT
+go_pos <- enrichGO(genes_positive$ENTREZID,
+                   OrgDb = org.Hs.eg.db,
+                   ont = "BP",
+                   pAdjustMethod = "BH",
+                   qvalueCutoff = 0.9,
+                   keyType = "ENTREZID",
+                   readable = T)
+p3 <- dotplot(go_pos, showCategory=10, label_format=40,
+              title="GO-BP ENRICHMENT of Positive Correlated Genes(8391)")
+write.table(go_pos, "./WY/positive_correlated_GO-BP_enrichment.csv",
+            quote = F, sep = ",", row.names = F)
+
+go_nega <- enrichGO(genes_negative$ENTREZID,
+                   OrgDb = org.Hs.eg.db,
+                   ont = "BP",
+                   pAdjustMethod = "BH",
+                   qvalueCutoff = 0.9,
+                   keyType = "ENTREZID",
+                   readable = T)
+p4 <- dotplot(go_nega, showCategory=10, label_format=40,
+              title="GO-BP ENRICHMENT of Negative Correlated Genes(605)")
+write.table(go_nega, "./WY/negative_correlated_GO-BP_enrichment.csv",
+            quote = F, sep = ",", row.names = F)
+
+p <- ggarrange(p3,p4,nrow = 1)
+pdf("./WY/GO-BP_ENRICHMENT.pdf", width = 18, height = 8)
+print(p)
+dev.off()
+
+###2024.8.29 new plot
+genes_positive <- bitr(geneID = positive$gene_id,
+                       fromType = "SYMBOL",
+                       toType = c("ENTREZID","ENSEMBL"),
+                       OrgDb = "org.Hs.eg.db")
+kegg_pos <- enrichKEGG(genes_positive$ENTREZID,
+                       organism = "hsa",
+                       keyType = "kegg",
+                       pvalueCutoff = 0.5,
+                       qvalueCutoff = 0.5)
+p1 <- dotplot(kegg_pos, showCategory=10)
+write.table(kegg_pos, "./WY/2024.8.30_plot/positive_correlated_kegg_enrichment.csv",
+            quote = F, sep = ",", row.names = F)
+
+
+go_pos <- enrichGO(genes_positive$ENTREZID,
+                  OrgDb = org.Hs.eg.db,
+                  ont = 'ALL',
+                  pAdjustMethod = "BH", 
+                  pvalueCutoff = 0.05,
+                  qvalueCutoff = 0.05,
+                  keyType = "ENTREZID",
+                  readable = T)
+pp <- barplot(go_pos, split = 'ONTOLOGY', showCategory = 10, label_format = 40, 
+             font.size = 10)+
+  facet_grid(ONTOLOGY~., scale = 'free')
+
+write.table(go_pos, "./WY/2024.8.30_plot/positive_correlated_GO_enrichment.csv",
+            quote = F, sep = ",", row.names = F)
+p <- ggarrange(pp,p1,nrow = 1)
+pdf("./WY/2024.8.30_plot/positive_ENRICHMENT.pdf", width = 18, height = 8)
+print(p)
+dev.off()
+
+dim(exp)
+autophagy_gene <- c("DNM1L","PRKN","PINK1","ATG7","BECN1","MAP1LC3B","MFF")
+tumor_gene <- c("VEGFA","MMP2","MMP9","VIM","CDH2","ZEB1","CD44")
+
+table(autophagy_gene %in% colnames(exp))
+table(tumor_gene %in% colnames(exp))
+library(ggthemes)
+library(ggplot2)
+library(ggthemes)
+library(ggpubr)
+library(ggpmisc)
+library(patchwork)
+
+for (i in autophagy_gene){
+  result_name=paste0("./WY/2024.8.30_plot/autophagy_gene/","RAB32_",i,"_correlation",".pdf")
+  pdf(result_name, width = 12, height = 8)
+  
+  #i="DNM1L"
+  tmp=exp[,i]
+  fit <- lm(rab32~tmp)
+  ds <- paste0("y = ", round(fit$coefficients[[2]],2),"x ",ifelse(fit$coefficients[[1]] > 0, "+ ", ""), round(fit$coefficients[[1]],2))
+  
+  p1 <- ggplot(exp,aes(RAB32,tmp))+
+    theme_few()+
+    geom_smooth(method = "lm",se=FALSE, color="darkred", formula = y~x)+
+    #stat_cor(method = "pearson", label.x = 3, label.y = 6, size=8)+
+    geom_point(size=4,color="#4DBBD5FF")+
+    annotate("text", label=ds, x=max(rab32)*0.15, y=max(tmp)*0.9,size=8, fontface="bold")+
+    stat_poly_eq(formula = y~x,
+                 aes(label=paste(..rr.label..,
+                                 ..p.value.label..,
+                                 sep = "~~~~~~")),
+                 parse = TRUE,size=6,label.x = 0.1, label.y = 0.72)+
+        labs(x=expression(paste(bold("log"[2]),bold(" ("),bolditalic("RAB32"),"  ",bold("mRNA expression level)"))),
+         y=substitute(paste(bold("log"[2]),bold(" ("),bolditalic(i),"  ",bold("mRNA expression level)")), list(i=i)))+
+    theme(plot.title = element_text(hjust = 0.5,size = 18, face = "bold"),
+          axis.title=element_text(size = 18, face = "bold"),
+          axis.text = element_text(size = 16, face = "bold"),
+          plot.margin = margin(1, 1, 1, 1, unit = "cm"),
+          legend.position = "NA"
+    )+
+    ggtitle(substitute(paste(bold("RAB32"),bold(" vs "),bolditalic(i)), list(i=i)))
+  print(p1)
+  dev.off()
+}
+
+for (i in tumor_gene){
+  result_name=paste0("./WY/2024.8.30_plot/tumor_gene/","RAB32_",i,"_correlation",".pdf")
+  pdf(result_name, width = 12, height = 8)
+  
+  #i="DNM1L"
+  tmp=exp[,i]
+  fit <- lm(rab32~tmp)
+  ds <- paste0("y = ", round(fit$coefficients[[2]],2),"x ",ifelse(fit$coefficients[[1]] > 0, "+ ", ""), round(fit$coefficients[[1]],2))
+  
+  p1 <- ggplot(exp,aes(RAB32,tmp))+
+    theme_few()+
+    geom_smooth(method = "lm",se=FALSE, color="darkred", formula = y~x)+
+    #stat_cor(method = "pearson", label.x = 3, label.y = 6, size=8)+
+    geom_point(size=4,color="#4DBBD5FF")+
+    annotate("text", label=ds, x=max(rab32)*0.15, y=max(tmp)*0.9,size=8, fontface="bold")+
+    stat_poly_eq(formula = y~x,
+                 aes(label=paste(..rr.label..,
+                                 ..p.value.label..,
+                                 sep = "~~~~~~")),
+                 parse = TRUE,size=6,label.x = 0.1, label.y = 0.8)+
+    labs(x=expression(paste(bold("log"[2]),bold(" ("),bolditalic("RAB32"),"  ",bold("mRNA expression level)"))),
+         y=substitute(paste(bold("log"[2]),bold(" ("),bolditalic(i),"  ",bold("mRNA expression level)")), list(i=i)))+
+    theme(plot.title = element_text(hjust = 0.5,size = 18, face = "bold"),
+          axis.title=element_text(size = 18, face = "bold"),
+          axis.text = element_text(size = 16, face = "bold"),
+          plot.margin = margin(1, 1, 1, 1, unit = "cm"),
+          legend.position = "NA"
+    )+
+    ggtitle(substitute(paste(bold("RAB32"),bold(" vs "),bolditalic(i)), list(i=i)))
+  print(p1)
+  dev.off()
+}
