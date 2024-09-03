@@ -1,0 +1,151 @@
+###突变图谱
+mycols<-c("#5a81b8","#c498b9","#d5885a","#90b5e2","#8c5978","#df6d86","#c8a7a0","#907854",
+          "#699bb2","#dfd2c2","#dc4d3a","#edb2b5","#d7c786") 
+setwd("./2024_8_28任务/长征GC/")
+file <- "./副本1505_2024-06-24 (2).xlsx"
+
+sheets <- c("snv_indel","cnv","Fusion_3")
+source("./fun_merge_sheets.R")
+# 使用自定义函数merge_sheets，传入文件路径和工作表名称列表，合并这些工作表的数据
+merged_data <- merge_sheets(file, sheets)
+# 获取合并后数据中"变异影响"列的所有唯一值
+unique_impact_values <- unique(merged_data$变异影响)
+# 筛选出"变异影响"列中存在缺失值的行，但不修改原始数据
+na_variant_impact_rows <- merged_data[is.na(merged_data$变异影响),]
+
+# 将"变异等级"列中缺失值的行的"变异等级"列赋值为"MUT"
+merged_data[is.na(merged_data$变异等级), "变异等级"] <- "MUT"
+# 从合并后的数据中移除基因列为"UGT1A1"的所有行
+merged_data <- merged_data[merged_data$基因 != "UGT1A1",]
+
+# 从合并后的数据中移除基因列为"DPYD"的所有行
+merged_data <- merged_data[merged_data$基因 != "DPYD",]
+
+#######基因突变图谱绘图正式开始
+setwd("../task_2024.8.28/raw_dat/")
+mut.raw <- read.csv("./mut_raw.csv")
+mut.raw.df <- mut.raw
+pheno_group <- read.csv("./update_file_2024.8.29.csv")
+
+
+library(dplyr)
+pheno_group_sub <- pheno_group[,c("NGS" )]
+group_mut_raw <- inner_join(mut.raw.df, subset(pheno_group, select = c(姓名, 报告编号)))
+
+
+indata <- group_mut_raw
+# 过滤出变异影响为NA的行
+tmp <- indata %>% filter(is.na(变异影响))
+# 定义一组颜色用于后续的可视化
+mycols<-c("#5a81b8","#c498b9","#d5885a","#90b5e2","#8c5978","#df6d86","#c8a7a0","#907854",
+          "#699bb2","#dfd2c2","#dc4d3a","#edb2b5","#d7c786") # 这里列出了一系列颜色的十六进制值
+# 将新数据赋值给newdata变量
+indata <- mut.raw.df
+newdata <- indata
+# 将基因列赋值给Hugo_Symbol列
+newdata$Hugo_Symbol <- newdata$基因
+
+# 将姓名列赋值给Tumor_Sample_Barcode列
+newdata$Tumor_Sample_Barcode <- newdata$报告编号 ##要和clin的Tumor_Sample_Barcode列一致
+
+# 将变异影响列赋值给mutation_type列
+newdata$mutation_type <- newdata$变异影响
+
+# 将mutation_type列赋值给Variant_Type列
+newdata$Variant_Type <- newdata$mutation_type
+
+# 为数据框添加一些固定的列，如Center, NCBI_Build, Strand等
+newdata$Center <- "3DMED"
+newdata$NCBI_Build <- 37
+newdata$Strand <- "+"
+newdata$Reference_Allele <- "A"
+newdata$Tumor_Seq_Allele1 <- newdata$Reference_Allele
+newdata$Tumor_Seq_Allele2 <- "C"
+newdata$Protein_Change <- newdata$p_dot
+newdata$Chromosome <- newdata$染色体
+newdata$Start_Position <- newdata$染色体起始位点
+newdata$End_Position <- newdata$染色体终止位点
+
+
+# 获取Tumor_Sample_Barcode列的唯一值
+unique(newdata$Tumor_Sample_Barcode)
+
+# 将mutation_type列赋值给Variant_Classification列
+newdata$Variant_Classification <- newdata$mutation_type
+
+# 获取Variant_Classification列的唯一值
+vc <- unique(newdata$Variant_Classification)
+
+# 定义另一组颜色用于后续的可视化
+cols<-c("#99c7df","#0065a9","#acdd81","#1e9616","#fba2a1","#fdb85e","yellow","purple")
+# 这里列出了另一组颜色的十六进制值
+
+# 为Variant_Classification列的每个唯一值分配颜色
+names(cols)<-c("Frameshift","Nonsynonymous","Stopgain","Nonframeshift","splicing", "gain","loss","Fusion")
+
+# 保持Hugo_Symbol列的值不变
+# 保持Hugo_Symbol列的值不变
+newdata$Hugo_Symbol <- newdata$基因
+
+# 去除重复的行，只保留Tumor_Sample_Barcode, Hugo_Symbol, Variant_Type列的组合
+newdata <- newdata %>% distinct(Tumor_Sample_Barcode, Hugo_Symbol, Variant_Type, .keep_all = T)
+
+
+BiocManager::install("maftools")
+library(maftools)
+laml.clin <-read.csv("./update_file_2024.8.29.csv")
+# laml.clin <-laml.clin[laml.clin$姓名 != "肖兴龙", ]
+colnames(laml.clin)[which(names(laml.clin) == "NGS")] <- "Tumor_Sample_Barcode"
+colnames(laml.clin)[c(7,9,10,11,20,21,22,24)] <- c("CPS","最佳疗效分组","PFS分组_mPFS","PFS分组_10个月","肝脏转移","淋巴结转移","腹膜转移","sites")
+# 读取MAF文件，同时传入临床数据，并去除重复的变异
+laml <- read.maf(maf = newdata, clinicalData = subset(laml.clin, select = c(Tumor_Sample_Barcode,性别,CPS,最佳疗效分组,PFS分组_mPFS,PFS分组_10个月,肝脏转移,淋巴结转移,腹膜转移,sites)), removeDuplicatedVariants = T, vc_nonSyn = vc)
+
+
+# 使用RColorBrewer包生成一组颜色
+color_colletion<-RColorBrewer::brewer.pal(n = 8,name = 'Spectral')
+getAnnoCols <- function(df_ann){
+  ann_cols = list()
+  for (i in 1:ncol(df_ann)) {
+    ann_lvls = unique(as.character(df_ann[[i]]))
+    ann_lvls_cols = sample(x = color_colletion, size = length(ann_lvls), replace = T)
+    ann_cols[[i]] = ann_lvls_cols
+    names(ann_cols[[i]]) = ann_lvls
+  }
+  names(ann_cols) = colnames(df_ann)
+  return(ann_cols)
+}
+annotation_Color = getAnnoCols(laml@clinical.data[,2:ncol(laml@clinical.data)])
+
+
+# 设置PDF文件的输出路径和尺寸
+out.dir ="../result/NGS_result/"
+pdf(paste(out.dir, "maftools_patients.pdf", sep = ""), width = 8.27, height = 10.69)
+
+# 使用oncoplot函数绘制肿瘤基因突变图
+oncoplot(maf = laml, 
+         colors = cols, 
+         #genes = c("KRAS","NRAS"),
+         top = 50, 
+         # minMut = 0.1,
+         #draw_titv = TRUE,
+         removeNonMutated = F,
+         showTumorSampleBarcodes = T,
+         SampleNamefontSize = 1,
+         showTitle = T,
+         clinicalFeatures  = colnames(laml@clinical.data)[2:ncol(laml@clinical.data)],
+         annotationColor = annotation_Color,
+         sortByAnnotation = T,
+         annotationOrder = names(annotation_Color[[1]]), 
+         anno_height = 3,
+         #pathways = "auto",
+         fontSize = 0.5,
+         annotationFontSize = 0.6,
+         legendFontSize = 0.6) 
+
+# 关闭PDF文件的输出
+dev.off()
+
+# 写入MAF文件的摘要信息
+
+write.mafSummary(laml, basename = "202406")
+#write.mafSummary()
