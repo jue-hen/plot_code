@@ -1,0 +1,72 @@
+###绘制柱状图
+library(dplyr)
+library(magick)
+library(eoffice)
+library(tidyr)
+library(ggplot2)
+library(ggstatsplot)
+library(ggpubr)
+library(hrbrthemes)
+library(plotly)
+
+library(sysfonts)
+library(showtextdb)
+library(showtext)
+showtext_auto()
+cli <- read.table("./2024_8_28任务/task_2024.8.28/result/NGS_result/merge_dat_analysis.csv", header = T ,sep = ",")
+sig_pair <- read.table("./2024_8_28任务/task_2024.8.28/result/NGS_result/fisher_test_result_significant.csv", header = T, sep = ",")
+sig_pair$group <- gsub("_p","",sig_pair$group)
+sig_pair$p <- as.character(round(sig_pair$p,3))
+
+mycol_fill=c('#0072b5','#bc3c29')
+for (i in c(1:nrow(sig_pair))) {
+  #i=1
+  data <- data.frame(status=cli[,sig_pair[i,1]], group=cli[,sig_pair[i,2]])
+  data <- na.omit(data)
+  data$status <- factor(data$status, levels = c(0,1), labels = c("WT","MUT"))
+  data_group <- as.character(unique(data$group))
+  # table(data$group)
+  
+  
+  plot<-ggbarstats(
+    data         = data,
+    x            = status,
+    y            = group,
+    title        = sig_pair[i,2], ## title for the plot
+    #paired = F,
+    results.subtitle=F,
+    # 
+    legend.title = sig_pair[i,1], 
+    # #xlab             = "am",
+    # #ggtheme          = hrbrthemes::theme_ipsum_pub(),
+    #ggplot.component = list(ggplot2::scale_x_discrete(guide = ggplot2::guide_axis(n.dodge = 2))),
+    # 
+  )+
+    scale_fill_manual(values=mycol_fill)+xlab(" ")
+  #plot
+  
+  plt<-plot+geom_signif(annotation=sig_pair[i,3],
+                        tip_length = 0.0005,
+                        y_position =1.05 ,vjust=0.02,
+                        xmin=data_group[1], xmax=data_group[2]
+                        #comparisons = list(c(data_group[1], data_group[2]))
+  )
+  
+  #plt
+  plt<-plt+theme(panel.grid.major = element_blank(),
+                 panel.grid.minor = element_blank(),
+                 panel.border = element_blank(),
+                 axis.line = element_blank(),
+                 axis.text.x = element_text(size=10, face = "bold"),
+                 axis.text.y = element_blank(),
+                 axis.title.x = element_text(size=13, face = "bold"),
+                 axis.title.y = element_blank(),
+                 axis.ticks.y = element_blank())
+  #plt
+  library(Cairo)
+  CairoPDF(paste0("./2024_8_28任务/task_2024.8.28/result/NGS_result/plot/bar_plot/",sig_pair[i,2],"_",sig_pair[i,1],".pdf"))
+  print(plt)
+  dev.off()
+  #ggsave(paste0("./2024_8_28任务/task_2024.8.28/result/test","_2.pdf"),plt)
+  
+}
