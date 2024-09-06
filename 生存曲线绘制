@@ -1,3 +1,5 @@
+library(survival)
+library(survminer)
 ###绘制生存曲线
 dat_sig <- read.table("./2024_8_28任务/task_2024.8.28/result/NGS_result/survivial_related_dat_significant.csv", header = T, sep = ",")
 target_gene <- dat_sig$gene
@@ -149,6 +151,8 @@ for (i in target_gene){
 
 ####plot function
 ####data表示绘图数据，包含pfs_month,pfs_status,os_month,os_status列，var表示需要研究的分类变量，label1表示标签1，label2表示标签2
+library(survival)
+library(survminer)
 survival_plot <- function(data, var, label1, label2){
   data[,var] <- factor(data[,var])
   surv_object_pfs <- Surv(time=data$pfs_month, event = data$pfs_status)
