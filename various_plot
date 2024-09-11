@@ -12,6 +12,16 @@ theme(plot.title = element_text(hjust = 0.5,size = 22, face = "bold"),
       axis.text = element_text(size = 18, face = 'bold'))
 
 
+####输出PDF中显示中文
+library(sysfonts)
+library(showtextdb)
+library(showtext)
+showtext_auto()
+library(Cairo)
+CairoPDF("./result/近视发展/高中近视发展.pdf", height = 8, width = 12)
+print(p)
+dev.off()
+
 #火山图
 draw_plot <- function(nrDEG, title){
   g1 <- ggplot(nrDEG,aes(logFC,log10P_value))+
