@@ -1,0 +1,46 @@
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+library(ggbreak)
+library(ggthemes)
+summary_df <- dat_gz %>% group_by(高中常驻地光气候) %>% 
+  summarise(mean=mean(高中近视度数增长),
+            se=sd(高中近视度数增长)/sqrt(n()))
+
+p <- ggplot(dat_gz, aes(高中常驻地光气候, 高中近视度数增长))+
+  theme_few()+
+  stat_summary(mapping = aes(fill=高中常驻地光气候), fun = mean, geom = "bar",
+               fun.args = list(mult=1), width=0.5)+
+  stat_summary(fun.data = mean_se, fun.args = list(mult=1), geom = "errorbar", width=0.2)+
+  stat_summary(fun=mean, geom = "text", aes(label=round(..y..,2)),
+               vjust=-0.2,hjust=-0.1, size=8, color="black", fontface="bold")+
+  labs(x="高中光气候分区",y="高中近视发展(0.01D)")+
+  geom_jitter(aes(fill=高中常驻地光气候), shape=21, size=1.5)+
+  scale_fill_manual(values = c("#403990","#80A6E2","#FBDD85","#F46F43"))+
+  stat_compare_means(method = "wilcox.test", 
+                     aes(label=..p.signif..),
+                     #label = "p.format",
+                     comparisons = list(c("I&II","V"),
+                                        c("III","V"),
+                                        c("IV","V")),
+                     label.y = c(200,250,300), size=12)+
+  scale_y_continuous(expand = c(0,0), limits = c(0,430))+
+  theme(plot.title = element_text(hjust = 0.5,size = 22, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10),
+        legend.position = "none",
+        plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA),
+        axis.title = element_text(size = 24, face = 'bold'),
+        axis.text = element_text(size = 18, face = 'bold'))
+p
+library(sysfonts)
+library(showtextdb)
+library(showtext)
+showtext_auto()
+library(Cairo)
+CairoPDF("./result/近视发展/高中近视发展.pdf", height = 8, width = 12)
+print(p)
+dev.off()
