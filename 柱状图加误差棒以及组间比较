@@ -3,9 +3,9 @@ library(ggplot2)
 library(ggpubr)
 library(ggbreak)
 library(ggthemes)
-summary_df <- dat_gz %>% group_by(高中常驻地光气候) %>% 
-  summarise(mean=mean(高中近视度数增长),
-            se=sd(高中近视度数增长)/sqrt(n()))
+#summary_df <- dat_gz %>% group_by(高中常驻地光气候) %>% 
+#  summarise(mean=mean(高中近视度数增长),
+#            se=sd(高中近视度数增长)/sqrt(n()))
 
 p <- ggplot(dat_gz, aes(高中常驻地光气候, 高中近视度数增长))+
   theme_few()+
