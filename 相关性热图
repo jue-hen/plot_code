@@ -1,0 +1,142 @@
+###相关性热图绘制
+# 定义显著性标记的函数，根据p值的大小添加星号
+signif_label <- function(p) {
+  if (p < 0.001) {
+    return("***")
+  } else if (p < 0.01) {
+    return("**")
+  } else if (p < 0.05) {
+    return("*")
+  } else {
+    return("")
+  }
+}
+
+library(corrplot)
+library(sysfonts)
+library(showtextdb)
+library(showtext)
+showtext_auto()
+library(Cairo)
+dat <- read.table("./clinical data/CEBPD_regression_analysis/CEBPD_gene_expression_心脏功能_association_analysis.txt", header = T, sep = "\t")
+colnames(dat)
+dat_sub <- subset(dat, dat$p_base < 0.05 | dat$p_acute <0.05 | dat$p_chronic <0.05)
+
+cor_matrix <- dat_sub[,c(2,5,8)]
+colnames(cor_matrix) <- c("Baseline","Acute","Chronic")
+rownames(cor_matrix) <- dat_sub$pheno
+cor_matrix <- as.matrix(cor_matrix)
+
+p_matrix <- dat_sub[,c(3,6,9)]
+colnames(p_matrix) <- c("Baseline","Acute","Chronic")
+rownames(p_matrix) <- dat_sub$pheno
+p_matrix <- as.matrix(p_matrix)
+
+signif_matrix <- matrix(sapply(p_matrix, signif_label), 
+                        nrow = nrow(p_matrix))
+
+my_colors <- colorRampPalette(c("darkblue", "grey", "darkred"))(200)
+# 绘制相关性热图，带有显著性标记
+corrplot(cor_matrix, method = "color", 
+         #type = "upper",       # 只显示上三角部分
+         tl.col = "black",     # 标签颜色
+         tl.srt = 45,          # 标签旋转角度
+         p.mat = p_matrix,     # p值矩阵
+         sig.level = 0.05,     # 显著性水平
+         insig = "label_sig",  # 不显著的位置使用符号标记
+         pch.col = "red",    # 标记颜色
+         pch.cex = 1.5,        # 标记大小
+         addCoef.col = "black",# 添加相关系数的颜色
+         number.cex = 0.7)     # 调整相关系数的字体大小
+
+# # 使用corrplot包绘制带有星号标记的相关性热图
+# corrplot(cor_matrix, method = "color", 
+#          #type = "upper",          # 只显示上三角
+#          tl.col = "black",        # 标签颜色
+#          tl.srt = 45,             # 标签旋转角度
+#          p.mat = p_matrix,        # 提供p值矩阵
+#          sig.level = 0.05,        # 显著性水平
+#          insig = "n",         # 不显著的值留空
+#          addCoef.col = "black",   # 添加相关系数数字
+#          number.cex = 0.8)        # 星号大小
+
+CairoPDF("./clinical data/CEBPD_regression_analysis/plot/CEBPD_心脏功能.pdf", width = 8, height = 10)
+corrplot(cor_matrix, method = "color", 
+         col = my_colors,
+         type = "full",          # 只显示上三角
+         tl.col = "black",        # 标签颜色
+         tl.srt = 45,             # 标签旋转角度
+         p.mat = p_matrix,        # 提供p值矩阵
+         sig.level = 0.05,        # 显著性水平
+         insig = "n",         # 不显著的值留空
+         addCoef.col = "black",   # 添加相关系数数字
+         number.cex = 0.8,
+         cl.offset = 2,
+         cl.align.text = "c",
+         cl.ratio = 0.5)        # 星号大小
+
+# 在热图上添加星号
+text(x = rep(1:ncol(signif_matrix), each = nrow(signif_matrix)), 
+     y = rep(nrow(signif_matrix):1, times = ncol(signif_matrix)) - 0.20, 
+     labels = signif_matrix, 
+     col = "red", 
+     cex = 2.0)  # 调整星号的大小
+
+dev.off()
+
+###循环绘制相关性热图
+for (i in type) {
+  #print(i)
+  tmp=cate[cate$完整分类 == i,]
+  if (length(tmp$指标) == 1){
+    next
+  }
+  file=paste0("./clinical data/CEBPD_regression_analysis/CEBPD_gene_expression_",i,"_association_analysis.txt")
+  dat <- read.table(file, header = T, sep = "\t")
+  #colnames(dat)
+  dat_sub <- subset(dat, dat$p_base < 0.05 | dat$p_acute <0.05 | dat$p_chronic <0.05)
+  
+  if (length(dat_sub$pheno) < 2){
+    next
+  }
+  
+  cor_matrix <- dat_sub[,c(2,5,8)]
+  colnames(cor_matrix) <- c("Baseline","Acute","Chronic")
+  rownames(cor_matrix) <- dat_sub$pheno
+  cor_matrix <- as.matrix(cor_matrix)
+  
+  p_matrix <- dat_sub[,c(3,6,9)]
+  colnames(p_matrix) <- c("Baseline","Acute","Chronic")
+  rownames(p_matrix) <- dat_sub$pheno
+  p_matrix <- as.matrix(p_matrix)
+  
+  signif_matrix <- matrix(sapply(p_matrix, signif_label), 
+                          nrow = nrow(p_matrix))
+  
+  my_colors <- colorRampPalette(c("darkblue", "grey", "darkred"))(200)
+  
+  save_name=paste0("./clinical data/CEBPD_regression_analysis/plot/CEBPD_",i,".pdf")
+  CairoPDF(save_name, width = 8, height = 10)
+  corrplot(cor_matrix, method = "color", 
+           col = my_colors,
+           type = "full",          # 只显示上三角
+           tl.col = "black",        # 标签颜色
+           tl.srt = 45,             # 标签旋转角度
+           p.mat = p_matrix,        # 提供p值矩阵
+           sig.level = 0.05,        # 显著性水平
+           insig = "n",         # 不显著的值留空
+           addCoef.col = "black",   # 添加相关系数数字
+           number.cex = 0.8,
+           cl.offset = 2,
+           cl.align.text = "c",
+           cl.ratio = 0.5)        # 星号大小
+  
+  # 在热图上添加星号
+  text(x = rep(1:ncol(signif_matrix), each = nrow(signif_matrix)), 
+       y = rep(nrow(signif_matrix):1, times = ncol(signif_matrix)) - 0.20, 
+       labels = signif_matrix, 
+       col = "red", 
+       cex = 2.0)  # 调整星号的大小
+  
+  dev.off()
+}
