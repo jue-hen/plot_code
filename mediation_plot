@@ -1,0 +1,119 @@
+
+setwd("~/Desktop/Methylation/2024/QTL/Mediation/")
+
+library(readr)
+base=read_table("Results/HA18+19_baseline.cis.mediation_result.txt")
+base=base[base$p2<0.05 & base$中介效应占比>0,]
+
+acute=read_table("Results/HA18+19_acute.cis.mediation_result.txt")
+acute=acute[acute$p2<0.05 & acute$中介效应占比>0,]
+
+chronic=read_table("Results/HA18+19_chronic.cis.mediation_result.txt")
+chronic=chronic[chronic$p2<0.05 & chronic$中介效应占比>0,]
+
+pd=data.frame(prot=c(base$中介效应占比,acute$中介效应占比,chronic$中介效应占比),
+              direct=c(base$直接效应,acute$直接效应,chronic$直接效应),
+              med=c(base$中介效应,acute$中介效应,chronic$中介效应),
+              tol=c(base$总效应,acute$总效应,chronic$总效应),
+              Periods=c(rep("Baseline",nrow(base)),
+                        rep("Acute",nrow(acute)),
+                        rep("Chronic",nrow(chronic))))
+
+pd$Periods=factor(pd$Periods,levels = unique(pd$Periods))
+quantile(pd$prot)
+#pd$rg=cut(pd$r2,breaks=quantile(pd$r2),include.lowest = T,right = T)
+pd$protg=cut(pd$prot,breaks=c(0,0.1,0.2,0.3,0.5,2))
+table(pd$protg)
+levels(pd$protg)=c("0-10%","10%-20%","20%-30%","30-50%",">50%")
+table(pd$protg)
+
+library(ggplot2)
+library(RColorBrewer)
+library(ggsci)
+library(ggpubr)
+
+pdf("Stat_meth_mediation.pdf",height = 4,width = 6)
+ggplot() +
+  geom_bar(data=pd,aes(protg,fill=Periods,stat = "count"),position = "dodge",width = 0.8)   +
+  geom_text(data=pd,aes(x=protg,y=..count..,group=Periods,label=..count..),
+            stat='count',vjust= -0.1,size=3,
+            position = position_dodge(width = .8)) +
+  scale_fill_manual(values = pal_npg("nrc")(10)[c(3,1,2)]) +
+  theme_bw() +
+  scale_y_continuous(expand = c(0.05,0.1),limits = c(0,350)) +
+  ylab("Counts") + xlab("Mediation proportion of CpGs") +
+  theme(#legend.position = "None",
+    axis.title = element_text(size=14),
+    strip.text = element_text(size=14) )
+
+dev.off()
+
+pd$direct=abs(pd$direct)
+pd$med=abs(pd$med)
+pd$tol=abs(pd$tol)
+library(tidyverse)
+
+ss=pd %>% 
+  group_by(Periods) %>%
+  summarise(m1=mean(direct),s1=sd(direct),
+            m2=mean(med),s2=sd(med),
+            m3=mean(tol),s3=sd(tol))
+
+pdf("Stat_meth_mediation.direct.pdf",height = 4,width = 5)
+ggplot(data=pd,aes(x=Periods,y=direct),) +
+  geom_violin(data=pd,aes(x=Periods,y=direct,fill=Periods)) +
+  geom_boxplot(fill="white",width = 0.2,outlier.colour = NA)   +
+  scale_fill_manual(values = pal_npg("nrc")(10)[c(3,1,2)]) +
+  stat_compare_means(comparisons = list(c("Baseline","Acute"),
+                                        c("Acute","Chronic"),
+                                        c("Baseline","Chronic"))) +
+  geom_text(data=ss,aes(Periods,y=-0.1,
+                        label=paste(sprintf("%.3f",m1),sprintf("%.3f",s1),sep="±")),
+            size=3,hjust= 0.5) +
+  theme_bw() +
+  scale_y_continuous(expand = c(0.05,0.05)) +
+  ylab("Direct effect") + xlab("") +
+  theme(legend.position = "None",
+        axis.text.x = element_text(size=12),
+        axis.title = element_text(size=14))
+dev.off()
+
+###########
+pdf("Stat_meth_mediation.med.pdf",height = 4,width = 5)
+ggplot(data=pd,aes(x=Periods,y=med),) +
+  geom_violin(data=pd,aes(x=Periods,y=med,fill=Periods)) +
+  geom_boxplot(fill="white",width = 0.2,outlier.colour = NA)   +
+  scale_fill_manual(values = pal_npg("nrc")(10)[c(3,1,2)]) +
+  stat_compare_means(comparisons = list(c("Baseline","Acute"),
+                                        c("Acute","Chronic"),
+                                        c("Baseline","Chronic"))) +
+  geom_text(data=ss,aes(Periods,y= -0.05,
+                        label=paste(sprintf("%.3f",m2),sprintf("%.3f",s2),sep="±")),
+            size=3,hjust= 0.5) +
+  theme_bw() +
+  scale_y_continuous(expand = c(0.05,0.05)) +
+  ylab("Mediation effect") + xlab("") +
+  theme(legend.position = "None",
+        axis.text.x = element_text(size=12),
+        axis.title = element_text(size=14))
+dev.off()
+
+#########
+pdf("Stat_meth_mediation.tol.pdf",height = 3,width = 4)
+ggplot(data=pd,aes(x=Periods,y=tol),) +
+  geom_violin(data=pd,aes(x=Periods,y=tol,fill=Periods)) +
+  geom_boxplot(fill="white",width = 0.2,outlier.colour = NA)   +
+  scale_fill_manual(values = pal_npg("nrc")(10)[c(3,1,2)]) +
+  stat_compare_means(comparisons = list(c("Baseline","Acute"),
+                                        c("Acute","Chronic"),
+                                        c("Baseline","Chronic"))) +
+  geom_text(data=ss,aes(Periods,y=0.1,
+                        label=paste(sprintf("%.3f",m3),sprintf("%.3f",s3),sep="±")),
+            size=3,hjust= 0.5) +
+  theme_bw() +
+  scale_y_continuous(expand = c(0.05,0.05)) +
+  ylab("Total effect") + xlab("") +
+  theme(legend.position = "None",
+        axis.text.x = element_text(size=12),
+        axis.title = element_text(size=14))
+dev.off()
