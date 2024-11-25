@@ -1,0 +1,64 @@
+library(dplyr)
+library(readr)
+library(maftools)
+cli_dat <- read_csv("./data_clinical_patient.csv", comment = "#")
+sample <- read_csv("./data_clinical_sample.csv", comment = "#")
+table(cli_dat$PATIENT_ID == sample$PATIENT_ID)
+
+###准备MAF格式文件
+####包含Hugo_Symbol:基因名称；chromosome:染色体；start_position/End_position突变位置；Variant_classification:突变类型；Tumor_Sample_Barcode:样本名称
+dat <- read_csv("./data_mutations.csv",comment = "#")
+colnames(dat)
+maf_dat <- dat[,c("Hugo_Symbol","Chromosome","Start_Position","End_Position","Tumor_Sample_Barcode","Variant_Classification","Consequence","NCBI_Build","Strand","Reference_Allele","Tumor_Seq_Allele1","Tumor_Seq_Allele2")]
+maf_dat$Variant_Type <- maf_dat$Variant_Classification
+table(sample$SAMPLE_ID %in% maf_dat$Tumor_Sample_Barcode)
+
+
+###获取Variant_Classification列的唯一值
+vc <- unique(maf_dat$Variant_Classification)
+
+###临床分组信息
+cli_dat$age <- ifelse(cli_dat$AGE<=60, "<=60",">60")
+laml.clin <- cbind(cli_dat[,c("SEX","age")],sample[,c("SAMPLE_ID","CANCER_TYPE")])
+colnames(laml.clin)[which(names(laml.clin) == "SAMPLE_ID")] <- "Tumor_Sample_Barcode"
+colnames(laml.clin)
+colnames(laml.clin)[2] <- "AGE"
+
+####读取MAF文件，同时传入临床数据，并去除重复变异
+laml <- read.maf(maf = maf_dat, clinicalData = subset(laml.clin, select=c(Tumor_Sample_Barcode, SEX, AGE, CANCER_TYPE)), removeDuplicatedVariants = T, vc_nonSyn = vc)
+
+###使用RColorBrew包生成一组颜色
+color_colletion <- RColorBrewer::brewer.pal(n=8, name = "Spectral")
+getAnnoCols <- function(df_ann){
+  ann_cols=list()
+  for (i in 1:ncol(df_ann)) {
+    ann_lvls = unique(as.character(df_ann[[i]]))
+    ann_lvls_cols = sample(x = color_colletion, size = length(ann_lvls), replace=T)
+    ann_cols[[i]] = ann_lvls_cols
+    names(ann_cols[[i]]) = ann_lvls
+  }
+  names(ann_cols) = colnames(df_ann)
+  return(ann_cols)
+}
+annotation_Color = getAnnoCols(laml@clinical.data[,2:ncol(laml@clinical.data)])
+annotation_Color[[1]][1] <- "#66C2A5"
+annotation_Color[[3]][1] <- "#FEE08B"
+
+###绘制突变图谱
+pdf("./plot/突变图谱.pdf", width = 8.27, height = 10.69)
+oncoplot(maf = laml, top = 25, 
+         removeNonMutated = F,
+         showTumorSampleBarcodes = F,
+         showTitle = T,
+         clinicalFeatures = colnames(laml@clinical.data)[2:ncol(laml@clinical.data)],
+         annotationColor = annotation_Color,
+         sortByAnnotation = T,
+         annotationOrder = names(annotation_Color[[1]]),
+         anno_height = 3,
+         fontSize = 0.65,
+         annotationFontSize = 1.5,
+         legendFontSize = 1.5)
+dev.off()
+
+###写入MAF文件的摘要信息
+write.mafSummary(laml, basename = "202411")
