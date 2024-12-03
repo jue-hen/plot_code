@@ -1,0 +1,27 @@
+dat <- read.csv("./processed_data_A_E_English_version.csv", header = T)
+
+library(ggplot2)
+
+
+#####年龄分层
+# 绘制频率分布直方图和分布密度曲线，y轴显示频率
+pdf("./result/分层比较/Age/Age_distribution.pdf", width = 10, height = 6)
+ggplot(dat, aes(Age)) +
+  theme_bw()+
+  geom_histogram(aes(y = ..count..),bins = length(unique(dat$Age)), fill = "lightblue", color = "black", alpha = 0.7) +  # 频率分布直方图
+  geom_text(stat = "bin", aes(y=..count.., label=..count..), bins=length(unique(dat$Age)), vjust=-0.3, size=7)+
+  geom_density(aes(y = ..count..), color = "red", size = 1) +  # 密度曲线，调整为频率
+  scale_y_continuous(expand = c(0,0), limits = c(0,max(dat$Age))) +
+  labs(title = "Age distribution", x = "Age", y = "Frequency") +
+  theme(plot.title = element_text(hjust = 0.5,size = 22, face = "bold"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10),
+        legend.position = c(.8,.6),
+        legend.key.height = unit(1.5, "cm"),
+        plot.margin = margin(0.5, 2.5, 0.5, 2.5, unit = "cm"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA),
+        axis.title = element_text(size = 24, face = 'bold'),
+        axis.text = element_text(size = 18, face = 'bold'))
+dev.off()
